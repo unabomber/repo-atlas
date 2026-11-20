@@ -642,7 +642,7 @@ UI.trace = {sel:null, q:''};
 function traceUi(i){ return (A.apiCalls||[]).filter(c=>c.rt===i); }
 function traceGroups(){
   if (TG && TG.A===A) return TG.g; const g=new Map();
-  A.routes.forEach((r,i)=>{ if (r.method==='PAGE') return; const k=featKey(r.path); if(!g.has(k)) g.set(k,{key:k,rts:[],ui:0,h:0}); const o=g.get(k); const ui=traceUi(i).length>0; o.rts.push({i,r,ui,h:r.hc!=null}); if(ui) o.ui++; if(r.hc!=null) o.h++; });
+  A.routes.forEach((r,i)=>{ if (r.method==='PAGE') return; let k=featKey(r.path); if (k==='/') k=base(r.file).replace(/\.[^.]+$/,'').replace(/_local$/,'').toLowerCase()||'/'; if(!g.has(k)) g.set(k,{key:k,rts:[],ui:0,h:0}); const o=g.get(k); const ui=traceUi(i).length>0; o.rts.push({i,r,ui,h:r.hc!=null}); if(ui) o.ui++; if(r.hc!=null) o.h++; });
   const arr=[...g.values()]; arr.forEach(o=>o.rts.sort((a,b)=>(b.ui-a.ui)||(b.h-a.h)||a.r.path.localeCompare(b.r.path)));
   arr.sort((a,b)=>(b.ui-a.ui)||(b.h-a.h)||(b.rts.length-a.rts.length)||a.key.localeCompare(b.key)); TG={A,g:arr}; return arr;
 }
@@ -728,12 +728,14 @@ function modelRoutes(){
 function modelFlags(fl){ return (/pk/.test(fl)?'<span class="pill" style="background:var(--acc);color:#fff">PK</span> ':'')+(/fk/.test(fl)?'<span class="pill">FK</span> ':'')+(/uniq/.test(fl)?'<span class="pill">unique</span>':''); }
 function dataGraph(){
   const E=A.modelEdges||[]; const deg=new Map(); E.forEach(([a,b])=>{ deg.set(a,(deg.get(a)||0)+1); deg.set(b,(deg.get(b)||0)+1); });
-  let ids=A.models.map((_,i)=>i).sort((a,b)=>(deg.get(b)||0)-(deg.get(a)||0)); const trimmed=ids.length>120; ids=ids.slice(0,120); const set=new Set(ids);
+  let ids=A.models.map((_,i)=>i).sort((a,b)=>(deg.get(b)||0)-(deg.get(a)||0)); let trimmed=ids.length>120; ids=ids.slice(0,120); let focus=null, note='';
+  if (A.models.length>30 && !UI.data.all) { focus = (UI.data.sel!=null && UI.data.sel<A.models.length) ? UI.data.sel : ids[0]; const nb=new Set([focus]); E.forEach(([a,b])=>{ if(a===focus) nb.add(b); if(b===focus) nb.add(a); }); if (nb.size<8) { [...nb].forEach(x=>E.forEach(([a,b])=>{ if(a===x) nb.add(b); if(b===x) nb.add(a); })); } ids=[focus,...[...nb].filter(x=>x!==focus).sort((a,b)=>(deg.get(b)||0)-(deg.get(a)||0)).slice(0,24)]; trimmed=false; note=`Showing <b>${esc(A.models[focus].name)}</b> and its ${ids.length-1} best-connected neighbour${ids.length>2?'s':''}. Click any table to re-centre.`; }
+  const set=new Set(ids);
   const edges=E.filter(([a,b])=>set.has(a)&&set.has(b)&&a!==b); const lvl=new Map(ids.map(i=>[i,0]));
   for (let it=0; it<8; it++) { let ch=false; for (const [a,b,k] of edges) { if (k==='m2m'||k==='o2o') continue; if (lvl.get(a)<=lvl.get(b) && lvl.get(b)+1<8) { lvl.set(a,lvl.get(b)+1); ch=true; } } if (!ch) break; }
   const used=modelRoutes();
-  const nodes=ids.map(i=>{ const m=A.models[i]; return {id:'d'+i,col:lvl.get(i),kind:'comp',weight:deg.get(i)||0,label:m.name,sub:(m.fields?m.fields.length+' fields':m.kind)+((used.get(i)||[]).length?' · '+used.get(i).length+' endpoints':''),color:'var(--warn)',modelIdx:i,title:m.name+' ('+m.kind+')'}; });
-  return {nodes, edges:edges.map(([a,b,k,via])=>({s:'d'+a,t:'d'+b,w:1,kind:'data',title:A.models[a].name+(k==='m2m'?' ↔ ':k==='o2o'?' ↔ (one-to-one) ':' → references ')+A.models[b].name+(via?' via '+via:'')})), trimmed};
+  const nodes=ids.map(i=>{ const m=A.models[i]; return {id:'d'+i,col:lvl.get(i),kind:'comp',weight:deg.get(i)||0,label:m.name,sub:(i===focus?'● centre · ':'')+(m.fields?m.fields.length+' fields':m.kind)+((used.get(i)||[]).length?' · '+used.get(i).length+' endpoints':''),color:'var(--warn)',modelIdx:i,title:m.name+' ('+m.kind+')'}; });
+  return {nodes, edges:edges.map(([a,b,k,via])=>({s:'d'+a,t:'d'+b,w:1,kind:'data',title:A.models[a].name+(k==='m2m'?' ↔ ':k==='o2o'?' ↔ (one-to-one) ':' → references ')+A.models[b].name+(via?' via '+via:'')})), trimmed, note, focus};
 }
 function dataDetail(i){
   UI.data.sel=i; const m=A.models[i]; const rts=(modelRoutes().get(i)||[]); const E=A.modelEdges||[];
@@ -761,13 +763,15 @@ function renderData(){
   const g=E.length?dataGraph():null; const colMax=g?Math.max(1,...[0,1,2,3,4,5,6,7].map(k=>g.nodes.filter(n=>n.col===k).length)):0; const gh=Math.max(280,Math.min(620,Math.min(colMax,8)*66+110));
   $('#panel').innerHTML=`<div class="wrap"><h3>Data model <small>${ms.length} table${ms.length>1?'s':''} / models · ${E.length} relation${E.length!==1?'s':''} · ${touched} reached by an endpoint</small></h3>
    <p class="hint">${g?'Tables that others point to are on the left; the tables that reference them are to the right. Dashed lines are foreign keys or references.':'No relations between these models were detected.'} Click a table for its fields, relations and the endpoints that reach it.</p>
-   ${g?`<div class="box" style="padding:0;height:${gh}px;position:relative;overflow:hidden"><div class="canvas" style="position:absolute;inset:0"><svg id="g6"></svg></div></div>${g.trimmed?'<div class="hint">Showing the 120 most connected tables.</div>':''}`:''}
+   ${g?`<div class="box" style="padding:0;height:${gh}px;position:relative;overflow:hidden"><div class="canvas" style="position:absolute;inset:0"><svg id="g6"></svg></div></div>${g.trimmed?'<div class="hint">Showing the 120 most connected tables.</div>':''}${g.note?`<div class="hint" style="margin-top:4px">${g.note} <button class="btn sm" id="dAll">Show all ${ms.length} tables</button></div>`:(ms.length>30?`<div class="hint" style="margin-top:4px"><button class="btn sm" id="dFocus">Focus on one table</button></div>`:'')}`:''}
    <div id="dataDetail" style="margin-top:10px"><div class="hint">Click a table to see its columns.</div></div>
    <input class="filter" id="dataF" style="margin-top:18px" placeholder="Filter tables or columns…" value="${esc(UI.data.q)}">
    <div class="mgrid">${cards.slice(0,120).map(({m,i})=>`<div class="mcard" data-m="${i}"><b>${esc(m.name)}</b><span class="hint"> ${esc(m.kind)}</span>${(m.fields||[]).slice(0,7).map(f=>`<div class="mono mf">${esc(f[0])} <span class="hint">${esc(f[1])}</span> ${/pk/.test(f[2])?'🔑':''}${/fk/.test(f[2])?'🔗':''}</div>`).join('')}${(m.fields||[]).length>7?`<div class="hint">+${m.fields.length-7} more</div>`:''}</div>`).join('')}</div>${cards.length>120?'<div class="hint">Showing 120. Use the filter.</div>':''}</div>`;
+  if ($('#dAll')) $('#dAll').onclick=()=>{ UI.data.all=true; renderData(); };
+  if ($('#dFocus')) $('#dFocus').onclick=()=>{ UI.data.all=false; renderData(); };
   $('#dataF').oninput=e=>{ UI.data.q=e.target.value; const pos=e.target.selectionStart; renderData(); const x=$('#dataF'); x.focus(); x.setSelectionRange(pos,pos); };
-  document.querySelectorAll('.mcard').forEach(c=>c.onclick=()=>{ const j=+c.dataset.m; if (DGRAPH&&DGRAPH.byId.has('d'+j)) { DGRAPH.select('d'+j); DGRAPH.focus('d'+j); } dataDetail(j); window.scrollTo&&$('#dataDetail').scrollIntoView({block:'nearest'}); });
-  if (g) { DGRAPH=GraphView($('#g6'),{node:n=>{ DGRAPH.select(n.id); dataDetail(n.modelIdx); }, edge:()=>{}, background:()=>DGRAPH.select(null)});
+  document.querySelectorAll('.mcard').forEach(c=>c.onclick=()=>{ const j=+c.dataset.m; if (g&&g.focus!=null&&!(DGRAPH&&DGRAPH.byId.has('d'+j))) { UI.data.sel=j; renderData(); $('#panel').scrollTop=0; return; } if (DGRAPH&&DGRAPH.byId.has('d'+j)) { DGRAPH.select('d'+j); DGRAPH.focus('d'+j); } dataDetail(j); window.scrollTo&&$('#dataDetail').scrollIntoView({block:'nearest'}); });
+  if (g) { DGRAPH=GraphView($('#g6'),{node:n=>{ if (g.focus!=null && n.modelIdx!==g.focus) { UI.data.sel=n.modelIdx; renderData(); return; } DGRAPH.select(n.id); dataDetail(n.modelIdx); }, edge:()=>{}, background:()=>DGRAPH.select(null)});
     const L=layeredLayout(g.nodes,g.edges,n=>n.col,{titles:['Referenced tables','Reference those','Then these','And these','','','',''],h:52,maxRows:9}); DGRAPH.set(g.nodes,g.edges,'layered',L); requestAnimationFrame(()=>DGRAPH.fit()); }
   if (UI.data.sel!=null && UI.data.sel<ms.length) { dataDetail(UI.data.sel); if (DGRAPH&&DGRAPH.byId.has('d'+UI.data.sel)) DGRAPH.select('d'+UI.data.sel); }
 }

@@ -365,6 +365,16 @@ function extractFile(f, text){
   }
   { const T = r._t||text; delete r._t;
     const lineAt = i => { let n=1; for (let p=T.indexOf('\n'); p>=0 && p<i; p=T.indexOf('\n',p+1)) n++; return n; };
+    if (lang==='Go' && r.routes.length) {
+      const sites=[];
+      for (const m of T.matchAll(/\.\s*(GET|POST|PUT|PATCH|DELETE|Get|Post|Put|Patch|Delete|Handle|HandleFunc|Any)\s*\(\s*"([^"]+)"\s*,/g)) {
+        const st=m.index+m[0].length; let d=1,p=st,q=null; for (; p<T.length && p<st+500 && d>0; p++) { const ch=T[p]; if (q) { if (ch==='\\'&&q!=='`') p++; else if (ch===q) q=null; } else if (ch==='"'||ch==='`') q=ch; else if (ch==='(') d++; else if (ch===')') d--; }
+        const args=T.slice(st,p-1); let h=null; for (const x of args.matchAll(/([A-Za-z_][\w]*(?:\.[A-Za-z_]\w*)*)(\s*\()?/g)) if (!x[2] && !/^(nil|true|false|http|func)$/.test(x[1])) h=x[1];
+        const mm=T.slice(p, p+120).match(/^\s*\.\s*Methods\(\s*"(\w+)"/);
+        sites.push({path:m[2], h, meth:mm?mm[1].toUpperCase():null, idx:m.index});
+      }
+      for (const rt of r.routes) { const s=sites.find(x=>!x.used && x.path===rt.path); if (s) { s.used=true; rt.idx=s.idx; if (s.h) rt.h=s.h; if (s.meth && rt.method==='ANY') rt.method=s.meth; rt.hasH=true; } }
+    }
     const isJs = JSFAM.includes(lang) || ext==='dart';
     if (isJs && r.routes.length) {
       const KW = new Set(['async','await','function','req','res','next','request','response','ctx','c','return','new','true','false','null','undefined','this']);
@@ -409,12 +419,13 @@ function splitTop(s){ const out=[]; let d=0, q=null, cur=''; for (let p=0;p<s.le
 const lastSeg = s => String(s||'').replace(/[`"'\[\]]/g,'').split('.').pop();
 function extractModelDetails(f, text, models){
   if (!models.length) return;
+  if (f.lang==='SQL') text = text.replace(/--[^\n]*/g,'').replace(/\/\*[\s\S]*?\*\//g,'');
   const L = f.lang; const esc_ = s => s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
   const put = (m, name, type, flags) => { m.fields = m.fields||[]; if (m.fields.length<40 && !m.fields.some(x=>x[0]===name)) m.fields.push([name, String(type||'').replace(/\s+/g,' ').slice(0,28), flags||'']); };
   const rel = (m, to, k, via) => { if (!to) return; m.rels = m.rels||[]; if (m.rels.length<30) m.rels.push([lastSeg(to), k, via||'']); };
   if (L==='Prisma') {
     const names = new Set([...text.matchAll(/^model\s+(\w+)\s*\{/gm)].map(x=>x[1]));
-    for (const m of models) { const mm = text.match(new RegExp('^model\\s+'+esc_(m.name)+'\\s*\\{','m')); if (!mm) continue; const body = balancedIn(text, mm.index, '{','}')||'';
+    for (const m of models) { const mm = text.match(new RegExp('^model\\s+'+esc_(m.name)+'\\s*\\{','m')); if (!mm) continue; const body = text.slice(mm.index+mm[0].length).split(/^\}/m)[0];
       for (const line of body.split('\n')) { const l=line.trim(); if (!l || l.startsWith('//') || l.startsWith('@@')) continue; const x=l.match(/^(\w+)\s+(\w+)(\[\])?(\?)?(.*)$/); if (!x) continue; const [,n,T,arr,opt,rest]=x;
         if (names.has(T)) { if (/@relation\([^)]*fields\s*:/.test(rest)) rel(m,T,'fk',n); else if (arr) rel(m,T,'many',n); else rel(m,T,'has',n); }
         else put(m,n,T+(arr||'')+(opt||''),(/@id\b/.test(rest)?'pk ':'')+(/@unique\b/.test(rest)?'uniq':'')); }
@@ -578,7 +589,7 @@ function extractClasses(f, text){
     c.line = text.slice(0,c.pos).split('\n').length + (text[c.pos]==='\n'?1:0);
     c.idents = new Set(seg.match(/\b[A-Z][A-Za-z0-9_]{2,}\b/g)||[]);
     let rx = null;
-    if (['JavaScript','TypeScript','Vue','Svelte','Astro'].includes(L)) rx = /^[ \t]+(?:(?:public|private|protected|static|async|override|readonly|abstract|get|set)\s+)*([A-Za-z_$][\w$]*)\s*(?:<[^>(]*>)?\s*\([^)]*\)\s*(?::\s*[^{;=]+)?\s*[{;]/gm;
+    if (['JavaScript','TypeScript','Vue','Svelte','Astro'].includes(L)) rx = /^[ \t]+(?:(?:public|private|protected|static|async|override|readonly|abstract|get|set)\s+)*([A-Za-z_$][\w$]*)\s*(?:<[^>(]*>)?\s*\((?:[^()]|\([^()]*\))*\)\s*(?::\s*[^{;=]+)?\s*[{;]/gm;
     else if (L==='Python') rx = /^[ \t]+(?:async\s+)?def\s+(\w+)/gm;
     else if (L==='Java'||L==='C#') rx = /^[ \t]+(?:(?:public|private|protected|internal|static|final|abstract|virtual|override|async|synchronized|sealed|extern|unsafe|default)\s+)+[\w<>\[\],.?]+(?:\s+[\w<>\[\],.?]+)*?\s+(\w+)\s*\(/gm;
     else if (L==='Kotlin') rx = /\bfun\s+(?:<[^>]*>\s*)?(?:[\w.]+\.)?(\w+)\s*\(/g;
@@ -825,6 +836,9 @@ async function analyzeRepo(input, opts = {}, onProgress = ()=>{}){
   }
   // also scan routing / entry-ish files regardless
   const extra = srcFiles.filter(f=>!toScan.includes(f) && SCAN_EXT.has(f.ext) && f.size<250000 && (/(^|\/)(main|app|server|index|routes?|urls|wsgi|asgi|manage|program|startup)\.\w+$/.test(f.path) && f.path.split('/').length<=3)).slice(0,60);
+  { const have=new Set([...toScan,...extra]); const ROUTEISH=/(^|\/)pages\/api\/|(^|\/)app\/.*\/route\.(ts|js)$|\.prisma$|\.sql$|(^|\/)(models?|entities|entity|schema|routes?|controllers?|handlers?|api)(\/|\.[a-z]+$)/i;
+    const FILEROUTE=/(^|\/)pages\/api\/|(^|\/)app\/.*\/route\.(ts|js)$/; const cand=srcFiles.filter(f=>!have.has(f) && SCAN_EXT.has(f.ext) && f.size<250000);
+    extra.push(...cand.filter(f=>FILEROUTE.test(f.path)).slice(0,600), ...cand.filter(f=>!FILEROUTE.test(f.path)&&ROUTEISH.test(f.path)).slice(0,300)); }
   toScan = toScan.concat(extra);
   const raw = new Map(); let done = 0;
   await pool(toScan, 12, async f=>{
@@ -1181,11 +1195,12 @@ async function analyzeRepo(input, opts = {}, onProgress = ()=>{}){
     const fidOf = new Map(files.map(f=>[f.path,f.id]));
     const findIn = (fids, name, cls) => { for (const fid of fids) for (const k of (unitsByFile.get(fid)||[])) { if (cls && k.name!==cls) continue; const i=k.methods.indexOf(name); if (i>=0) return [k.id,i]; } return null; };
     for (const rt of uniqRoutes) { const fid=fidOf.get(rt.file); if (fid==null||rt.method==='PAGE') continue; let hu=null;
-      if (rt.h) { const parts=rt.h.split('.'); const nm=parts[parts.length-1], q=parts.length>1?parts[parts.length-2]:null;
+      if (rt.fileRoute) { const us=unitsByFile.get(fid)||[]; const want=[rt.method,rt.method.toLowerCase(),'handler','GET','POST']; for (const nm of want) { for (const k of us) { const i=k.methods.indexOf(nm); if (i>=0) { hu=[k.id,i]; break; } } if (hu) break; } if (!hu) { const fm=us.find(k=>k.fn); if (fm && fm.methods.length) { let i=fm.methods.findIndex(n=>/handler|route|api/i.test(n)); hu=[fm.id,i>=0?i:0]; } } }
+      if (!hu && rt.h) { const parts=rt.h.split('.'); const nm=parts[parts.length-1], q=parts.length>1?parts[parts.length-2]:null;
         const imp=[fid,...files[fid].imports]; hu = findIn(imp,nm,null);
         if (!hu) { const c=[]; for (const k of classes) { const i=k.methods.indexOf(nm); if (i>=0) c.push([k.id,i]); } const cm=c.filter(x=>classes[x[0]].comp===files[fid].comp); if (cm.length===1) hu=cm[0]; }
         if (hu && q) { const alt=findIn(imp,nm,q); if (alt) hu=alt; } }
-      if (!hu && rt.line) { let best=null, bl=1e9; for (const k of (unitsByFile.get(fid)||[])) for (let i=0;i<k.methods.length;i++) { const ml=k.mlines&&k.mlines[i]; if (ml!=null && ml>=rt.line && ml-rt.line<=14 && (ml<bl || (best && ml===bl && k.line<classes[best[0]].line)) && (k.fn||k.line<=rt.line)) { bl=ml; best=[k.id,i]; } } hu=best; }
+      if (!hu && rt.line && (rt.nest || ['Python','Java','Kotlin','C#','PHP','Scala','Ruby'].includes(files[fid].lang))) { let best=null, bl=1e9; for (const k of (unitsByFile.get(fid)||[])) for (let i=0;i<k.methods.length;i++) { const ml=k.mlines&&k.mlines[i]; if (ml!=null && ml>=rt.line && ml-rt.line<=40 && (ml<bl || (best && ml===bl && k.line<classes[best[0]].line)) && (k.fn||k.line<=rt.line)) { bl=ml; best=[k.id,i]; } } hu=best; }
       if (hu) { rt.hc=hu[0]; rt.hm=hu[1]; } delete rt.h; } }
 
   /* ---------- match client HTTP calls to backend routes ---------- */
