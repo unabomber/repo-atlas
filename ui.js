@@ -397,7 +397,7 @@ function drawerMethod(k,m){
   $('#drawer').innerHTML=`<h4>${esc(k.methods[m])}()</h4>
    <div style="margin:6px 0 8px"><span class="pill"><i style="background:${clsHue(k.id)}"></i>${k.fn?'function in '+esc(k.name):'method of <a class="link" data-class="'+k.id+'">'+esc(k.name)+'</a>'}</span> ${comp?`<a class="link" data-comp="${comp.id}" style="font-size:12.5px">${esc(comp.label)}</a>`:''}</div>
    <div class="mono hint" style="word-break:break-all"><a href="${ghBlob(f.path)}#L${(k.mlines&&k.mlines[m])||k.line}" target="_blank" rel="noopener">${esc(f.path)}:${(k.mlines&&k.mlines[m])||k.line}</a></div>
-   <div style="margin:10px 0"><button class="btn sm" id="mAll">Show all ${k.fn?'functions in '+esc(k.name):esc(k.name)+' calls'}</button></div>
+   <div style="margin:10px 0"><button class="btn sm" id="mAll">Show all ${k.fn?'functions in '+esc(k.name):esc(k.name)+' calls'}</button> <button class="btn sm" data-imp="m:${key}">What depends on this?</button></div>
    <h5>Calls (${out.length})</h5>${list(out,'Makes no calls to other known methods.')}
    <h5>Called by (${inc.length})</h5>${list(inc,'No known callers in the scanned code.')}
    <div class="hint" style="margin-top:14px">Calls are resolved from the receiver’s declared type, the file’s imports, or a unique name; dynamic dispatch, callbacks and reflection can be missed.</div>`;
@@ -424,7 +424,7 @@ function drawerEdge(e){
 }
 function drawerFile(f){
   const imp = f.imports.map(i=>A.files[i]), by = f.importedBy.map(i=>A.files[i]);
-  $('#drawer').innerHTML = `<h4>${esc(base(f.path))}</h4><div class="mono hint">${esc(f.path)}</div><div style="margin:8px 0"><a class="btn sm" href="${ghBlob(f.path)}" target="_blank" rel="noopener">Open on GitHub ↗</a></div>
+  $('#drawer').innerHTML = `<h4>${esc(base(f.path))}</h4><div class="mono hint">${esc(f.path)}</div><div style="margin:8px 0"><a class="btn sm" href="${ghBlob(f.path)}" target="_blank" rel="noopener">Open on GitHub ↗</a> <button class="btn sm" data-imp="f:${f.id}">What depends on this?</button></div>
    <div class="hint">${fmtB(f.size)}${f.loc?' · '+f.loc+' lines':''}${f.lang?' · '+f.lang:''}${f.comp>=0?' · in '+esc(A.comps[f.comp].label):''}</div>
    ${f.routes.length?`<h5>Routes</h5>${f.routes.slice(0,10).map(r=>`<div><span class="method m-${r.method}">${r.method}</span> <span class="mono">${esc(r.path)}</span></div>`).join('')}`:''}
    ${f.models.length?`<h5>Models</h5>${f.models.map(m=>`<span class="tag fw">${esc(m.name)}</span>`).join('')}`:''}
@@ -451,11 +451,11 @@ function drawerHome(){
 }
 
 /* ---------------- tabs ---------------- */
-const TABS = [['overview','Overview'],['arch','Architecture'],['flows','Flows'],['api','API & Data'],['trace','Feature trace'],['data','Data model'],['runtime','Runtime'],['files','Files'],['export','Export']];
+const TABS = [['overview','Overview'],['arch','Architecture'],['flows','Flows'],['api','API & Data'],['trace','Feature trace'],['data','Data model'],['impact','Impact'],['runtime','Runtime'],['files','Files'],['export','Export']];
 function showTab(t){
   UI.tab=t; document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
   const p=$('#panel'); p.className='panel'+(t==='arch'||t==='files'?' flush':''); p.scrollTop=0;
-  ({overview:renderOverview,arch:renderArch,flows:renderFlows,api:renderApi,trace:renderTrace,data:renderData,runtime:renderRuntime,files:renderFiles,export:renderExport})[t]();
+  ({overview:renderOverview,arch:renderArch,flows:renderFlows,api:renderApi,trace:renderTrace,data:renderData,impact:renderImpact,runtime:renderRuntime,files:renderFiles,export:renderExport})[t]();
 }
 function insights(){
   const out=[]; const cs=A.comps;
@@ -584,7 +584,7 @@ function apiGraphData(){
 function apiCallRow(c){ const rt=c.rt>=0?A.routes[c.rt]:null; return `<li style="font-size:12px"><span class="method m-${c.method}">${c.method}</span> <span class="mono">${esc(c.path)}</span>${c.host?` <span class="pill">${esc(c.host)}</span>`:''}<br><a class="mono" href="${ghBlob(c.file)}#L${c.line}" target="_blank" rel="noopener">${esc(short(c.file,46))}:${c.line}</a>${c.cu>=0?` <span class="hint">(${esc(mname(c.cu,c.mu))})</span>`:''}${rt?`<br><span class="hint">→ handled by <span class="mono">${esc(rt.method)} ${esc(rt.path)}</span> in ${esc(base(rt.file))}</span>`:''}</li>`; }
 function apiDetail(n){
   const all=A.apiCalls||[]; let title, body, list=[];
-  if (n.epRt!=null) { const rt=A.routes[n.epRt]; list=all.filter(c=>c.rt===n.epRt); title=`<span class="method m-${rt.method}">${rt.method}</span> <span class="mono">${esc(rt.path)}</span>`; body=`<div class="hint">Handled in <a class="mono" href="${ghBlob(rt.file)}" target="_blank" rel="noopener">${esc(rt.file)}</a>${rt.comp>=0?' · '+compLink(rt.comp):''}</div><div style="margin:8px 0"><button class="btn sm" id="trBtn">Trace this endpoint</button></div><h5>${list.length} client call${list.length>1?'s':''}</h5>`; }
+  if (n.epRt!=null) { const rt=A.routes[n.epRt]; list=all.filter(c=>c.rt===n.epRt); title=`<span class="method m-${rt.method}">${rt.method}</span> <span class="mono">${esc(rt.path)}</span>`; body=`<div class="hint">Handled in <a class="mono" href="${ghBlob(rt.file)}" target="_blank" rel="noopener">${esc(rt.file)}</a>${rt.comp>=0?' · '+compLink(rt.comp):''}</div><div style="margin:8px 0"><button class="btn sm" id="trBtn">Trace this endpoint</button> <button class="btn sm" data-imp="r:${n.epRt}">What depends on this?</button></div><h5>${list.length} client call${list.length>1?'s':''}</h5>`; }
   else if (n.unitKey) { const [cu,mu]=n.unitKey.split('.').map(Number); list=all.filter(c=>c.cu===cu&&c.mu===mu&&c.rt>=0); const callers=D.mIn.get(n.unitKey)||[]; title=`<b>${esc(mname(cu,mu))}</b>`; body=`<div class="hint">API client function in <a class="mono" href="${ghBlob(A.files[A.classes[cu].file].path)}" target="_blank" rel="noopener">${esc(A.files[A.classes[cu].file].path)}</a></div><h5>Makes ${list.length} HTTP call${list.length>1?'s':''}</h5>`; n._tail=`<h5>Called by ${callers.length} function${callers.length!==1?'s':''}</h5><div>${callers.slice(0,30).map(([a,b])=>`<span class="tag mono">${esc(mname(a,b))}</span>`).join('')||'<span class="hint">Nothing in the scanned code calls it directly.</span>'}</div>`; }
   else { const f=A.files[n.fileKey]; list=all.filter(c=>c.file===f.path&&c.rt>=0); title=`<b>${esc(base(f.path))}</b>`; body=`<div class="hint mono">${esc(f.path)}</div><h5>${list.length} HTTP call${list.length>1?'s':''} from this file</h5>`; }
   $('#apiDetail').innerHTML = `<div class="box"><div>${title}</div>${body}<ul class="clean">${list.slice(0,30).map(apiCallRow).join('')}</ul>${list.length>30?`<div class="hint">+${list.length-30} more</div>`:''}${n._tail||''}</div>`;
@@ -671,7 +671,7 @@ function traceDetail(n){
   const callList=(arr,empty)=>arr.length?`<ul class="clean">${arr.slice(0,30).map(([c,mm])=>`<li><a class="link" data-method="${c}.${mm}">${esc(mname(c,mm))}</a></li>`).join('')}${arr.length>30?`<li class="hint">+${arr.length-30} more</li>`:''}</ul>`:`<div class="hint">${empty}</div>`;
   if (n.epRt!=null) { const rt=A.routes[n.epRt], cs=traceUi(n.epRt); h=`<div><span class="method m-${rt.method}">${rt.method}</span> <span class="mono">${esc(rt.path)}</span></div><div class="hint">Defined in <a class="mono" href="${ghBlob(rt.file)}${rt.line?'#L'+rt.line:''}" target="_blank" rel="noopener">${esc(rt.file)}${rt.line?':'+rt.line:''}</a>${rt.comp>=0?' · '+compLink(rt.comp):''}</div>${rt.hc!=null?`<div class="hint">Handled by <a class="link" data-method="${rt.hc}.${rt.hm}">${esc(mname(rt.hc,rt.hm))}</a></div>`:'<div class="hint">The handler is written inline in the route file, so its calls are not traced.</div>'}<h5>${cs.length} UI call${cs.length!==1?'s':''}</h5>${cs.length?`<ul class="clean">${cs.slice(0,12).map(apiCallRow).join('')}</ul>`:'<div class="hint">No frontend request in this repo reaches it.</div>'}`; }
   else if (n.unitKey) { const [c,m]=n.unitKey.split('.').map(Number), k=A.classes[c], key=n.unitKey, f=A.files[k.file]; const out=D.mOut.get(key)||[], inc=D.mIn.get(key)||[]; const ml=(k.mlines&&k.mlines[m])||k.line;
-    h=`<div><b>${esc(mname(c,m))}</b></div><div class="hint">${A.comps[k.comp]?compLink(k.comp)+' · ':''}<a class="mono" href="${ghBlob(f.path)}#L${ml}" target="_blank" rel="noopener">${esc(f.path)}:${ml}</a></div><div style="margin:8px 0"><button class="btn sm" data-focus="${key}">Open in call graph</button> <button class="btn sm" data-impact="${key}">What depends on this?</button></div><h5>Calls (${out.length})</h5>${callList(out,'Makes no calls to other known functions.')}<h5>Called by (${inc.length})</h5>${callList(inc,'No known callers.')}`; }
+    h=`<div><b>${esc(mname(c,m))}</b></div><div class="hint">${A.comps[k.comp]?compLink(k.comp)+' · ':''}<a class="mono" href="${ghBlob(f.path)}#L${ml}" target="_blank" rel="noopener">${esc(f.path)}:${ml}</a></div><div style="margin:8px 0"><button class="btn sm" data-focus="${key}">Open in call graph</button> <button class="btn sm" data-imp="m:${key}">What depends on this?</button></div><h5>Calls (${out.length})</h5>${callList(out,'Makes no calls to other known functions.')}<h5>Called by (${inc.length})</h5>${callList(inc,'No known callers.')}`; }
   else if (n.modelIdx!=null) { const mo=A.models[n.modelIdx]; const users=A.classes.flatMap(k=>(k.mm||[]).flatMap((x,i)=>x.includes(n.modelIdx)?[[k.id,i]]:[])); h=`<div><b>${esc(mo.name)}</b> <span class="pill">${esc(mo.kind)}</span></div><div class="hint">Defined in <a class="mono" href="${ghBlob(mo.file)}" target="_blank" rel="noopener">${esc(mo.file)}</a></div><div style="margin:8px 0"><button class="btn sm" data-model="${n.modelIdx}">Open in data model</button></div><h5>Used by ${users.length} function${users.length!==1?'s':''}</h5>${callList(users,'None found.')}`; }
   else { const f=A.files[n.fileKey]; const cs=(A.apiCalls||[]).filter(c=>c.file===f.path&&c.rt>=0); h=`<div><b>${esc(base(f.path))}</b></div><div class="hint mono"><a href="${ghBlob(f.path)}" target="_blank" rel="noopener">${esc(f.path)}</a></div><h5>${cs.length} HTTP call${cs.length!==1?'s':''} from this file</h5><ul class="clean">${cs.slice(0,12).map(apiCallRow).join('')}</ul>`; }
   el.innerHTML=`<div class="box">${h}</div>`;
@@ -679,7 +679,6 @@ function traceDetail(n){
   el.querySelectorAll('[data-method]').forEach(a=>a.onclick=()=>{ const [c,m]=a.dataset.method.split('.').map(Number); focusMethod(c,m); });
   el.querySelectorAll('[data-focus]').forEach(a=>a.onclick=()=>{ const [c,m]=a.dataset.focus.split('.').map(Number); focusMethod(c,m); });
   el.querySelectorAll('[data-model]').forEach(a=>a.onclick=()=>{ UI.data.sel=+a.dataset.model; showTab('data'); });
-  el.querySelectorAll('[data-impact]').forEach(a=>a.onclick=()=>{ UI.impact={key:a.dataset.impact}; showTab('impact'); });
 }
 function renderTrace(){
   const groups=traceGroups(); const q=UI.trace.q.toLowerCase();
@@ -734,7 +733,7 @@ function dataDetail(i){
   const rl=(arr,dir)=>arr.map(e=>{ const o=dir?e[1]:e[0]; return `<li><a class="link" data-model="${o}">${esc(A.models[o].name)}</a> <span class="hint">${e[2]==='m2m'?'many-to-many':e[2]==='o2o'?'one-to-one':dir?'referenced by this table':'has a foreign key to this table'}${e[3]?' · '+esc(e[3]):''}</span></li>`; }).join('');
   const users=A.classes.flatMap(k=>(k.mm||[]).flatMap((x,mi)=>x.includes(i)?[[k.id,mi]]:[]));
   $('#dataDetail').innerHTML=`<div class="box"><div><b style="font-size:15px">${esc(m.name)}</b> <span class="pill">${esc(m.kind)}</span> ${m.comp>=0?compLink(m.comp):''}</div>
-   <div class="hint">Defined in <a class="mono" href="${ghBlob(m.file)}" target="_blank" rel="noopener">${esc(m.file)}</a></div>
+   <div class="hint">Defined in <a class="mono" href="${ghBlob(m.file)}" target="_blank" rel="noopener">${esc(m.file)}</a> <button class="btn sm" data-imp="d:${i}">What depends on this?</button></div>
    ${m.fields&&m.fields.length?`<h5>${m.fields.length} field${m.fields.length>1?'s':''}</h5><table><tr><th>Name</th><th>Type</th><th></th></tr>${m.fields.map(f=>`<tr><td class="mono">${esc(f[0])}</td><td class="mono">${esc(f[1])}</td><td>${modelFlags(f[2])}</td></tr>`).join('')}</table>`:'<div class="hint" style="margin-top:8px">Fields could not be read from this definition.</div>'}
    ${outs.length||ins.length?`<h5>Relations</h5><ul class="clean">${rl(outs,true)}${rl(ins,false)}</ul>`:''}
    <h5>Endpoints that reach this data (${rts.length})</h5>${rts.length?`<ul class="clean">${rts.slice(0,20).map(ri=>{ const r=A.routes[ri]; return `<li><span class="method m-${r.method}">${r.method}</span> <span class="mono">${esc(r.path)}</span> <a class="link" data-trace="${ri}">trace</a></li>`; }).join('')}${rts.length>20?`<li class="hint">+${rts.length-20} more</li>`:''}</ul>`:'<div class="hint">No endpoint was traced to it (handlers are followed up to 3 calls deep).</div>'}
@@ -764,6 +763,96 @@ function renderData(){
     const L=layeredLayout(g.nodes,g.edges,n=>n.col,{titles:['Referenced tables','Reference those','Then these','And these','','','',''],h:52,maxRows:9}); DGRAPH.set(g.nodes,g.edges,'layered',L); requestAnimationFrame(()=>DGRAPH.fit()); }
   if (UI.data.sel!=null && UI.data.sel<ms.length) { dataDetail(UI.data.sel); if (DGRAPH&&DGRAPH.byId.has('d'+UI.data.sel)) DGRAPH.select('d'+UI.data.sel); }
 }
+
+/* ---------------- impact analysis ---------------- */
+let IGRAPH=null; UI.impact=null; UI.impQ='';
+const impKey = (t,k) => t+':'+k;
+function impactSearch(q){
+  q=q.toLowerCase().trim(); if (q.length<2) return [];
+  const rank=(label)=>{ const l=label.toLowerCase(); const nm=l.split(/[.:]+/).pop(); return (nm===q?0:nm.startsWith(q)?1:l.startsWith(q)?2:3)*1000+label.length; };
+  const fn=[]; for (const k of A.classes) for (let i=0;i<k.methods.length;i++) { const nm=mname(k.id,i); if (nm.toLowerCase().includes(q)) fn.push({t:'m',key:k.id+'.'+i,label:nm,sub:A.files[k.file].path,r:rank(nm)}); }
+  const fl=A.files.filter(f=>f.path.toLowerCase().includes(q)&&f.scanned).map(f=>({t:'f',key:String(f.id),label:base(f.path),sub:f.path,r:rank(base(f.path))}));
+  const md=A.models.map((m,i)=>({m,i})).filter(({m})=>m.name.toLowerCase().includes(q)).map(({m,i})=>({t:'d',key:String(i),label:m.name,sub:m.kind+' · '+m.file,r:rank(m.name)}));
+  const rt=A.routes.map((r,i)=>({r,i})).filter(({r})=>r.method!=='PAGE'&&(r.method+' '+r.path).toLowerCase().includes(q)).map(({r,i})=>({t:'r',key:String(i),label:r.method+' '+r.path,sub:r.file,r:rank(r.path)}));
+  const s=a=>a.sort((x,y)=>x.r-y.r);
+  return [...s(rt).slice(0,6),...s(md).slice(0,6),...s(fl).slice(0,8),...s(fn).slice(0,14)];
+}
+function impactCompute(type,key){
+  const seeds=[]; const seedFiles=new Set(); const fileOfUnit=k=>A.classes[+k.split('.')[0]].file;
+  if (type==='m') seeds.push(key);
+  else if (type==='f') { const fid=+key; seedFiles.add(fid); for (const k of A.classes) if (k.file===fid) for (let i=0;i<k.methods.length&&seeds.length<80;i++) seeds.push(k.id+'.'+i); }
+  else if (type==='d') { const mi=+key; for (const k of A.classes) (k.mm||[]).forEach((x,i)=>{ if (x.includes(mi)&&seeds.length<150) seeds.push(k.id+'.'+i); }); }
+  else if (type==='r') { for (const c of A.apiCalls||[]) if (c.rt===+key && c.cu>=0 && !seeds.includes(c.cu+'.'+c.mu)) seeds.push(c.cu+'.'+c.mu); }
+  const depth=new Map(); const q=[]; seeds.forEach(s=>{ if (!depth.has(s)) { depth.set(s,0); q.push(s); } });
+  for (let h=0;h<q.length&&depth.size<600;h++) { const s=q[h], d=depth.get(s); if (d>=6) continue; for (const [c,m] of (D.mIn.get(s)||[])) { const k=c+'.'+m; if (!depth.has(k)) { depth.set(k,d+1); q.push(k); if (depth.size>=600) break; } } }
+  const files=new Set(seedFiles), comps=new Map(); for (const k of depth.keys()) { const fid=fileOfUnit(k); files.add(fid); const cid=A.files[fid].comp; if (cid>=0) comps.set(cid,(comps.get(cid)||0)+1); }
+  const routes=new Set(); if (type==='r') routes.add(+key); else A.routes.forEach((rt,ri)=>{ if (rt.method==='PAGE') return; const fid=A.files.findIndex(f=>f.path===rt.file); if (rt.hc!=null ? depth.has(rt.hc+'.'+rt.hm) : (type==='f'&&seedFiles.has(fid))) routes.add(ri); });
+  const ui=new Set(); for (const c of A.apiCalls||[]) if (routes.has(c.rt)) { const f=A.files.find(x=>x.path===c.file); if (f) ui.add(f.id); }
+  for (const fid of files) { const c=A.files[fid].comp>=0?A.comps[A.files[fid].comp]:null; if (c&&c.role==='client'&&!TEST_RE.test(A.files[fid].path)) ui.add(fid); }
+  const tests=new Set([...files].filter(fid=>TEST_RE.test(A.files[fid].path)));
+  let importers=[]; if (type==='f') { const seen=new Map([[+key,0]]); const qq=[+key]; for (let h=0;h<qq.length&&seen.size<400;h++) { const d=seen.get(qq[h]); if (d>=4) continue; for (const i of A.files[qq[h]].importedBy) if (!seen.has(i)) { seen.set(i,d+1); qq.push(i); } } importers=[...seen.entries()].filter(([i])=>i!==+key).sort((a,b)=>a[1]-b[1]); }
+  return {seeds, depth, files, comps, routes, ui, tests, importers, capped:depth.size>=600};
+}
+function impactGraph(type,key,R){
+  const N=new Map(), E=[]; const colr=id=>{ const c=id>=0?A.comps[id]:null; return c?COMP_COLOR(c):undefined; };
+  const order=[...R.depth.entries()].sort((a,b)=>a[1]-b[1]||(D.mIn.get(b[0])||[]).length-(D.mIn.get(a[0])||[]).length).slice(0,70);
+  for (const [k,d] of order) { const [c,m]=k.split('.').map(Number); const kk=A.classes[c]; N.set('u'+k,{id:'u'+k,col:6-Math.min(d,6),kind:'comp',weight:(D.mIn.get(k)||[]).length,label:kk.fn?kk.methods[m]:kk.name+'.'+kk.methods[m],sub:base(A.files[kk.file].path),color:colr(kk.comp),unitKey:k,title:mname(c,m)+'\n'+A.files[kk.file].path}); }
+  for (const [k] of order) for (const [cb,mb] of (D.mOut.get(k)||[])) { const t=cb+'.'+mb; if (N.has('u'+t) && R.depth.get(t)<R.depth.get(k)) E.push({s:'u'+k,t:'u'+t,w:1,kind:'call',title:mname(...k.split('.').map(Number))+' calls '+mname(cb,mb)}); }
+  if (type==='d') { const m=A.models[+key]; N.set('t',{id:'t',col:7,kind:'comp',weight:5,label:m.name,sub:m.kind,color:'var(--warn)',modelIdx:+key,title:m.name}); R.seeds.slice(0,70).forEach(s=>{ if (N.has('u'+s)) E.push({s:'t',t:'u'+s,w:1,kind:'data',title:'uses '+m.name}); }); E.forEach(e=>{ if (e.s==='t') { const x=e.s; e.s=e.t; e.t=x; } }); }
+  if (type==='r') { const rt=A.routes[+key]; N.set('t',{id:'t',col:7,kind:'comp',weight:5,label:rt.method+' '+rt.path,sub:base(rt.file),color:colr(rt.comp),epRt:+key,title:rt.method+' '+rt.path}); R.seeds.slice(0,70).forEach(s=>{ if (N.has('u'+s)) E.push({s:'u'+s,t:'t',w:1,kind:'api',title:'sends a request to this endpoint'}); }); }
+  return {nodes:[...N.values()],edges:E,trimmed:R.depth.size>70};
+}
+function impactTitle(type,key){
+  if (type==='m') { const [c,m]=key.split('.').map(Number); const k=A.classes[c], f=A.files[k.file]; return {name:mname(c,m),sub:`<a class="mono" href="${ghBlob(f.path)}#L${(k.mlines&&k.mlines[m])||k.line}" target="_blank" rel="noopener">${esc(f.path)}</a>`,kind:'Function'}; }
+  if (type==='f') { const f=A.files[+key]; return {name:base(f.path),sub:`<a class="mono" href="${ghBlob(f.path)}" target="_blank" rel="noopener">${esc(f.path)}</a>`,kind:'File'}; }
+  if (type==='d') { const m=A.models[+key]; return {name:m.name,sub:`<span class="mono">${esc(m.file)}</span>`,kind:'Data model'}; }
+  const r=A.routes[+key]; return {name:r.method+' '+r.path,sub:`<span class="mono">${esc(r.file)}</span>`,kind:'Endpoint'};
+}
+function impactHome(){
+  const hot=[...D.mIn.entries()].map(([k,v])=>({k,n:v.length})).sort((a,b)=>b.n-a.n).slice(0,8);
+  const hf=A.files.filter(f=>f.scanned&&f.importedBy.length&&!TEST_RE.test(f.path)).sort((a,b)=>b.importedBy.length-a.importedBy.length).slice(0,8);
+  return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-top:14px"><div class="box"><b>Most-called functions</b><div class="hint">Changing these touches the most code.</div><ul class="clean">${hot.map(h=>{ const [c,m]=h.k.split('.').map(Number); return `<li><a class="link" data-imp="m:${h.k}">${esc(mname(c,m))}</a> <span class="hint">${h.n} caller${h.n>1?'s':''}</span></li>`; }).join('')||'<li class="hint">No calls were resolved in this repo.</li>'}</ul></div>
+   <div class="box"><b>Most-imported files</b><div class="hint">The files other files depend on most.</div><ul class="clean">${hf.map(f=>`<li><a class="link" data-imp="f:${f.id}">${esc(short(f.path,40))}</a> <span class="hint">${f.importedBy.length} file${f.importedBy.length>1?'s':''}</span></li>`).join('')||'<li class="hint">No imports were resolved.</li>'}</ul></div></div>`;
+}
+function renderImpact(){
+  const I=UI.impact; const res=impactSearch(UI.impQ);
+  let body='';
+  if (I) {
+    const R=impactCompute(I.type,I.key); const T=impactTitle(I.type,I.key); const gd=impactGraph(I.type,I.key,R);
+    const nF=R.depth.size, nFiles=R.files.size, nC=R.comps.size, nR=R.routes.size;
+    const level = (nR>=6||nC>=4||nF>=60)?'Wide':(nR>=1||nC>=2||nF>=8)?'Moderate':'Contained';
+    const tile=(n,l)=>`<div class="box" style="text-align:center;padding:10px 6px"><div style="font-size:22px;font-weight:700">${n}</div><div class="hint">${l}</div></div>`;
+    const colMax=Math.max(1,...[0,1,2,3,4,5,6,7].map(k=>gd.nodes.filter(n=>n.col===k).length)); const gh=Math.max(260,Math.min(620,Math.min(colMax,8)*66+110));
+    const byDepth=[...R.depth.entries()].sort((a,b)=>a[1]-b[1]);
+    const routesL=[...R.routes].slice(0,30);
+    body=`<div class="box" style="margin-top:14px"><div class="hint">${T.kind}</div><div style="font-size:17px;font-weight:700">${esc(T.name)}</div><div class="hint">${T.sub}</div>
+     <p style="margin:10px 0 0"><b>Blast radius: ${level}.</b> ${nF?`A change here can reach <b>${nF}</b> function${nF>1?'s':''} in <b>${nFiles}</b> file${nFiles>1?'s':''}${nC?` across <b>${nC}</b> component${nC>1?'s':''}`:''}${nR?`, <b>${nR}</b> endpoint${nR>1?'s':''}`:''}${R.ui.size?` and <b>${R.ui.size}</b> UI file${R.ui.size>1?'s':''}`:''}.`:`Nothing in the scanned code calls ${I.type==='d'?'functions that use this table':'this'}.`}${R.capped?' (Search stopped at 600 functions.)':''}</p></div>
+     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-top:10px">${tile(nF,'functions')}${tile(nFiles,'files')}${tile(nC,'components')}${tile(nR,'endpoints')}${tile(R.ui.size,'UI files')}${tile(R.tests.size,'tests')}</div>
+     ${gd.nodes.length?`<h3>Who depends on it <small>read left to right: the farthest callers first, the thing you change on the right</small></h3><div class="box" style="padding:0;height:${gh}px;position:relative;overflow:hidden"><div class="canvas" style="position:absolute;inset:0"><svg id="g7"></svg></div></div>${gd.trimmed?'<div class="hint">Showing the 70 closest functions.</div>':''}<div id="traceDetail" style="margin-top:10px"><div class="hint">Click a box for its code location.</div></div>`:''}
+     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-top:14px">
+      ${nR?`<div class="box"><b>Endpoints affected (${nR})</b><ul class="clean">${routesL.map(ri=>{ const r=A.routes[ri]; return `<li><span class="method m-${r.method}">${r.method}</span> <span class="mono">${esc(r.path)}</span> <a class="link" data-trace="${ri}">trace</a></li>`; }).join('')}</ul>${nR>30?`<div class="hint">+${nR-30} more</div>`:''}</div>`:''}
+      ${R.ui.size?`<div class="box"><b>UI code affected (${R.ui.size})</b><ul class="clean">${[...R.ui].slice(0,25).map(fid=>`<li><a class="mono" href="${ghBlob(A.files[fid].path)}" target="_blank" rel="noopener">${esc(short(A.files[fid].path,44))}</a></li>`).join('')}</ul></div>`:''}
+      ${nC?`<div class="box"><b>Components affected (${nC})</b><ul class="clean">${[...R.comps.entries()].sort((a,b)=>b[1]-a[1]).map(([cid,n])=>`<li>${compLink(cid)} <span class="hint">${n} function${n>1?'s':''}</span></li>`).join('')}</ul></div>`:''}
+      ${R.tests.size?`<div class="box"><b>Tests that exercise it (${R.tests.size})</b><ul class="clean">${[...R.tests].slice(0,20).map(fid=>`<li><a class="mono" href="${ghBlob(A.files[fid].path)}" target="_blank" rel="noopener">${esc(short(A.files[fid].path,44))}</a></li>`).join('')}</ul></div>`:(nF?`<div class="box"><b>Tests</b><div class="hint">No test file was found among the callers.</div></div>`:'')}
+      ${R.importers.length?`<div class="box"><b>Files that import this file (${R.importers.length})</b><ul class="clean">${R.importers.slice(0,25).map(([fid,d])=>`<li><span class="mono" style="font-size:12px">${esc(short(A.files[fid].path,44))}</span> <span class="hint">${d===1?'directly':d+' steps away'}</span></li>`).join('')}</ul></div>`:''}
+     </div>
+     ${nF>1?`<details class="box" style="margin-top:14px"><summary>All ${nF} affected functions, nearest first</summary><ul class="clean" style="margin-top:8px">${byDepth.slice(0,120).map(([k,d])=>{ const [c,m]=k.split('.').map(Number); return `<li><a class="link" data-method="${k}">${esc(mname(c,m))}</a> <span class="hint">${d===0?'the target':d===1?'calls it directly':d+' calls away'} · ${esc(short(A.files[A.classes[c].file].path,40))}</span></li>`; }).join('')}</ul></details>`:''}
+     <p class="hint" style="margin-top:12px">This follows calls and imports found by reading the code. Callbacks, events, reflection and dynamic dispatch can hide a dependency, so treat it as a minimum, not a guarantee.</p>`;
+    var GD=gd;
+  } else body=impactHome();
+  $('#panel').innerHTML=`<div class="wrap"><h3>Impact analysis <small>what breaks if I change this?</small></h3>
+   <p class="hint">Search for a function, file, data table or endpoint. You will see everything that calls or depends on it, the endpoints and UI it reaches, and the tests that cover it.</p>
+   <input class="filter" id="impF" style="max-width:560px;width:100%" placeholder="Search a function, file, table or endpoint…" value="${esc(UI.impQ)}" autocomplete="off">
+   ${res.length?`<div class="box" style="margin-top:6px;padding:4px">${res.map(x=>`<div class="trrow" data-imp="${x.t}:${x.key}" style="padding-left:10px"><span class="pill">${{m:'function',f:'file',d:'table',r:'endpoint'}[x.t]}</span> <b>${esc(x.label)}</b> <span class="hint">${esc(short(x.sub,56))}</span></div>`).join('')}</div>`:''}
+   ${body}</div>`;
+  const inp=$('#impF'); inp.oninput=e=>{ UI.impQ=e.target.value; const pos=e.target.selectionStart; renderImpact(); const i=$('#impF'); i.focus(); i.setSelectionRange(pos,pos); };
+  document.querySelectorAll('#panel [data-comp]').forEach(a=>a.onclick=()=>{ showTab('arch'); setTimeout(()=>selectComp(+a.dataset.comp),50); });
+  document.querySelectorAll('#panel [data-trace]').forEach(a=>a.onclick=()=>{ UI.trace.sel='r:'+a.dataset.trace; UI.trace.q=''; showTab('trace'); });
+  document.querySelectorAll('#panel details [data-method]').forEach(a=>a.onclick=()=>{ const [c,m]=a.dataset.method.split('.').map(Number); focusMethod(c,m); });
+  if (typeof GD!=='undefined' && GD && GD.nodes.length) { IGRAPH=GraphView($('#g7'),{node:n=>{ IGRAPH.select(n.id); if (n.unitKey||n.epRt!=null||n.modelIdx!=null) traceDetail(n); }, edge:()=>{}, background:()=>IGRAPH.select(null)});
+    const L=layeredLayout(GD.nodes,GD.edges,n=>n.col,{titles:['6 calls away','5 calls away','4 calls away','3 calls away','2 calls away','Calls it directly',({f:'Functions in this file',d:'Functions that use it',r:'Client function'})[I.type]||'Change here',({d:'Data table',r:'Endpoint'})[I.type]||''].slice(0,8),h:52,maxRows:9}); IGRAPH.set(GD.nodes,GD.edges,'layered',L); requestAnimationFrame(()=>IGRAPH.fit()); }
+}
+document.addEventListener('click',e=>{ const b=e.target.closest&&e.target.closest('[data-imp]'); if (!b) return; e.preventDefault(); const [t,...k]=b.dataset.imp.split(':'); UI.impact={type:t,key:k.join(':')}; UI.impQ=''; if (UI.tab!=='impact') showTab('impact'); else renderImpact(); window.scrollTo&&($('#panel').scrollTop=0); });
 
 let RGRAPH=null;
 function renderRuntime(){
@@ -827,7 +916,7 @@ function fileDetail(f){
   const imp=f.imports.map(i=>A.files[i]), by=f.importedBy.map(i=>A.files[i]);
   const c=f.comp>=0?A.comps[f.comp]:null;
   $('#fdetail').innerHTML = `<h3 style="margin-top:0">${esc(base(f.path))}</h3><div class="mono hint">${esc(f.path)}</div>
-   <div style="margin:10px 0;display:flex;gap:8px;flex-wrap:wrap"><a class="btn sm" href="${ghBlob(f.path)}" target="_blank" rel="noopener">Open on GitHub ↗</a>${c?`<button class="btn sm" id="toComp">Show ${esc(short(c.label,30))} in map</button>`:''}</div>
+   <div style="margin:10px 0;display:flex;gap:8px;flex-wrap:wrap"><a class="btn sm" href="${ghBlob(f.path)}" target="_blank" rel="noopener">Open on GitHub ↗</a><button class="btn sm" data-imp="f:${f.id}">What depends on this?</button>${c?`<button class="btn sm" id="toComp">Show ${esc(short(c.label,30))} in map</button>`:''}</div>
    <div class="hint">${esc(f.kind)} · ${fmtB(f.size)}${f.loc?' · '+f.loc+' lines':''}${f.lang?' · '+f.lang:''}${f.scanned?'':' · not scanned for imports'}</div>
    ${fileClasses(f.id).length?`<h3>Classes & types</h3>${fileClasses(f.id).map(k=>`<div><a class="link" data-class="${k.id}">${esc(k.name)}</a> <span class="pill">${esc(k.kind)}</span> <span class="hint">${k.methods.length?k.methods.slice(0,6).join(', ')+(k.methods.length>6?'…':''):''}</span></div>`).join('')}`:''}
    ${f.routes.length?`<h3>Routes</h3>${f.routes.map(r=>`<div><span class="method m-${r.method}">${r.method}</span> <span class="mono">${esc(r.path)}</span></div>`).join('')}`:''}
