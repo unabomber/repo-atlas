@@ -307,7 +307,7 @@ function extractFile(f, text){
     for (const m of text.matchAll(/@\w+(?:\.\w+)*\.route\s*\(\s*['"]([^'"]*)['"](?:[^)]*methods\s*=\s*\[([^\]]*)\])?/g)) r.routes.push({idx:m.index,method:(m[2]||'GET').replace(/['"\s]/g,'').toUpperCase()||'GET',path:m[1]});
     if (/(^|\/)urls\.py$/.test(f.path)) for (const m of text.matchAll(/\b(?:re_)?path\s*\(\s*r?['"]([^'"]*)['"]/g)) r.routes.push({idx:m.index,method:'ANY',path:'/'+m[1]});
     { const pms=[...text.matchAll(/\b(?:APIRouter|Blueprint)\s*\([^)]*?(?:prefix|url_prefix)\s*=\s*f?['"]([^'"]*)['"]/g)]; if (pms.length===1 && pms[0][1] && !/(^|\/)urls\.py$/.test(f.path)) for (const rt of r.routes) rt.path='/'+pms[0][1].replace(/^\/|\/$/g,'')+'/'+rt.path.replace(/^\//,''); }
-    for (const m of text.matchAll(/^class\s+(\w+)\((?:[\w.]*\.)?(Model|Base|DeclarativeBase|SQLModel|Document|AbstractUser|BaseModel)\b/gm)) if (m[2]!=='BaseModel') r.models.push({name:m[1],kind:m[2]==='Model'?'Django model':m[2]==='Document'?'Document':'ORM model'});
+    for (const m of text.matchAll(/^class\s+(\w+)\s*\(([^)]*)\)\s*:/gm)) { const hdr=m[2]; const tb=/\btable\s*=\s*True/.test(hdr); const bs=splitList(hdr); const b=bs.find(x=>['Model','Base','DeclarativeBase','SQLModel','Document','AbstractUser'].includes(x)); if (tb) r.models.push({name:m[1],kind:'SQLModel table'}); else if (b && b!=='SQLModel') r.models.push({name:m[1],kind:b==='Model'?'Django model':b==='Document'?'Document':'ORM model'}); }
     if (/if\s+__name__\s*==\s*['"]__main__['"]/.test(text)) r.entry='cli';
     if (/(FastAPI|Flask|Quart|Sanic|Starlette)\s*\(/.test(text) && /=\s*(FastAPI|Flask|Quart|Sanic|Starlette)\s*\(/.test(text)) r.entry='server';
     if (/uvicorn\.run|app\.run\(/.test(text)) r.entry='server';
@@ -394,6 +394,73 @@ function splitList(s, sep=','){
   let t = s; for (let i=0;i<3;i++) t = t.replace(/<[^<>]*>/g,'');
   return t.split(sep).map(el=>{ if (/=/.test(el)) return ''; el = el.replace(/\([^)]*\)/g,'').trim(); const w = el.split(/\s+/).pop()||''; return w.split(/[.:\\]/).pop(); })
     .filter(x=>/^[A-Za-z_][\w$]*$/.test(x) && !['object','Object','public','private','protected','virtual','where','struct','class','new','default','Any','any'].includes(x));
+}
+
+/* ---------------- data model details (fields, keys, relations) ---------------- */
+function balancedIn(text, from, open, close){
+  const i = text.indexOf(open, from); if (i<0) return null; let d=0, q=null;
+  for (let p=i; p<text.length && p<i+40000; p++) { const ch=text[p];
+    if (q) { if (ch==='\\') p++; else if (ch===q) q=null; continue; }
+    if (ch==='"'||ch==="'"||ch==='`') { q=ch; continue; }
+    if (ch===open) d++; else if (ch===close) { d--; if (d===0) return text.slice(i+1,p); } }
+  return null;
+}
+function splitTop(s){ const out=[]; let d=0, q=null, cur=''; for (let p=0;p<s.length;p++) { const ch=s[p]; if (q) { cur+=ch; if (ch==='\\') { cur+=s[++p]||''; } else if (ch===q) q=null; continue; } if (ch==='"'||ch==="'"||ch==='`') { q=ch; cur+=ch; continue; } if ('([{'.includes(ch)) d++; else if (')]}'.includes(ch)) d--; if (ch===',' && d===0) { out.push(cur); cur=''; } else cur+=ch; } if (cur.trim()) out.push(cur); return out; }
+const lastSeg = s => String(s||'').replace(/[`"'\[\]]/g,'').split('.').pop();
+function extractModelDetails(f, text, models){
+  if (!models.length) return;
+  const L = f.lang; const esc_ = s => s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+  const put = (m, name, type, flags) => { m.fields = m.fields||[]; if (m.fields.length<40 && !m.fields.some(x=>x[0]===name)) m.fields.push([name, String(type||'').replace(/\s+/g,' ').slice(0,28), flags||'']); };
+  const rel = (m, to, k, via) => { if (!to) return; m.rels = m.rels||[]; if (m.rels.length<30) m.rels.push([lastSeg(to), k, via||'']); };
+  if (L==='Prisma') {
+    const names = new Set([...text.matchAll(/^model\s+(\w+)\s*\{/gm)].map(x=>x[1]));
+    for (const m of models) { const mm = text.match(new RegExp('^model\\s+'+esc_(m.name)+'\\s*\\{','m')); if (!mm) continue; const body = balancedIn(text, mm.index, '{','}')||'';
+      for (const line of body.split('\n')) { const l=line.trim(); if (!l || l.startsWith('//') || l.startsWith('@@')) continue; const x=l.match(/^(\w+)\s+(\w+)(\[\])?(\?)?(.*)$/); if (!x) continue; const [,n,T,arr,opt,rest]=x;
+        if (names.has(T)) { if (/@relation\([^)]*fields\s*:/.test(rest)) rel(m,T,'fk',n); else if (arr) rel(m,T,'many',n); else rel(m,T,'has',n); }
+        else put(m,n,T+(arr||'')+(opt||''),(/@id\b/.test(rest)?'pk ':'')+(/@unique\b/.test(rest)?'uniq':'')); }
+      const fkNames = new Set((body.match(/fields\s*:\s*\[([^\]]*)\]/g)||[]).flatMap(s=>s.replace(/fields\s*:\s*\[|\]/g,'').split(',').map(x=>x.trim()))); (m.fields||[]).forEach(fl=>{ if (fkNames.has(fl[0])) fl[2]=(fl[2]+' fk').trim(); }); }
+  } else if (L==='SQL') {
+    for (const m of models) { const mm = text.match(new RegExp('create\\s+table\\s+(?:if\\s+not\\s+exists\\s+)?[`"\\[]?'+esc_(m.name)+'[`"\\]]?\\s*\\(','i')); if (!mm) continue; const body = balancedIn(text, mm.index+mm[0].length-1, '(',')')||'';
+      for (const part of splitTop(body)) { const p=part.trim(); if (!p) continue;
+        const fk = p.match(/foreign\s+key\s*\(([^)]*)\)\s*references\s+[`"\[]?([\w.]+)/i); if (fk) { rel(m,fk[2],'fk',fk[1]); fk[1].split(',').forEach(c=>{ const fl=(m.fields||[]).find(x=>x[0]===lastSeg(c.trim())); if (fl) fl[2]=(fl[2]+' fk').trim(); }); continue; }
+        const pk = p.match(/^(?:constraint\s+\S+\s+)?primary\s+key\s*\(([^)]*)\)/i); if (pk) { pk[1].split(',').forEach(c=>{ const fl=(m.fields||[]).find(x=>x[0]===lastSeg(c.trim())); if (fl && !/pk/.test(fl[2])) fl[2]=('pk '+fl[2]).trim(); }); continue; }
+        if (/^(constraint|unique|index|key|check|fulltext|exclude)\b/i.test(p)) continue;
+        const c = p.match(/^[`"\[]?(\w+)[`"\]]?\s+([A-Za-z_][\w ]*(?:\([^)]*\))?)/); if (!c) continue; const r = p.match(/references\s+[`"\[]?([\w.]+)/i);
+        put(m,c[1],c[2].split(/\s+(?:not|null|primary|default|unique|references|auto_increment|generated|constraint|check)\b/i)[0],(/primary\s+key/i.test(p)?'pk ':'')+(r?'fk ':'')+(/\bunique\b/i.test(p)?'uniq':'')); if (r) rel(m,r[1],'fk',c[1]); } }
+    for (const a of text.matchAll(/alter\s+table\s+(?:only\s+)?[`"\[]?([\w.]+)[`"\]]?[\s\S]{0,200}?foreign\s+key\s*\(([^)]*)\)\s*references\s+[`"\[]?([\w.]+)/gi)) { const m=models.find(x=>lastSeg(x.name).toLowerCase()===lastSeg(a[1]).toLowerCase()); if (m) { rel(m,a[3],'fk',a[2]); a[2].split(',').forEach(c=>{ const fl=(m.fields||[]).find(x=>x[0]===lastSeg(c.trim())); if (fl && !/fk/.test(fl[2])) fl[2]=(fl[2]+' fk').trim(); }); } }
+  } else if (L==='Python') {
+    const classes = new Map(); const cm = [...text.matchAll(/^class\s+(\w+)\s*(?:\(([^)]*)\))?\s*:/gm)];
+    cm.forEach((c,i)=>classes.set(c[1],{bases:splitList(c[2]||''),body:text.slice(c.index+c[0].length, i+1<cm.length?cm[i+1].index:text.length)}));
+    const own = (cls, depth) => { const c=classes.get(cls); if (!c||depth>4) return []; const lines=[]; for (const b of c.bases) lines.push(...own(b,depth+1)); for (const l of c.body.split('\n')) if (/^(?: {2,}|\t)\S/.test(l)) lines.push(l); return lines; };
+    for (const m of models) { if (!classes.has(m.name)) continue; const lines = own(m.name,0).join('\n');
+      const ta = lines.match(/__tablename__\s*=\s*['"](\w+)/); if (ta) m.alias = ta[1];
+      const joined=[]; { let acc='', dep=0; for (const l of lines.split('\n')) { acc += (acc?' ':'')+l.trim(); dep += (l.match(/[(\[{]/g)||[]).length - (l.match(/[)\]}]/g)||[]).length; if (dep<=0) { joined.push(acc); acc=''; dep=0; } } if (acc) joined.push(acc); }
+      for (const l of joined) { const s=l.trim(); if (!s || s.startsWith('#')) continue;
+        let x;
+        if ((x = s.match(/^(\w+)\s*=\s*models\.(\w+)\((.*)$/))) { const [,n,T,rest]=x; if (/^(ForeignKey|OneToOneField)$/.test(T)) { const tg=(rest.match(/^\s*['"]?([\w.]+)['"]?/)||[])[1]; put(m,n,'→ '+lastSeg(tg||'?'),'fk'+(/primary_key\s*=\s*True/.test(rest)?' pk':'')); rel(m,tg==='self'?m.name:tg,T==='OneToOneField'?'o2o':'fk',n); } else if (T==='ManyToManyField') { const tg=(rest.match(/^\s*['"]?([\w.]+)['"]?/)||[])[1]; rel(m,tg==='self'?m.name:tg,'m2m',n); } else put(m,n,T.replace(/Field$/,''),(/primary_key\s*=\s*True/.test(rest)?'pk ':'')+(/unique\s*=\s*True/.test(rest)?'uniq':'')); continue; }
+        if ((x = s.match(/^(\w+)\s*(?::\s*([^=]+?))?\s*=\s*(?:\w+\.)?(Column|mapped_column|Field)\((.*)$/))) { const [,n,ann,fn,rest]=x; if (n==='__tablename__') continue; const fk=(rest.match(/ForeignKey\(\s*['"]([\w.]+)['"]/)||rest.match(/foreign_key\s*=\s*['"]([\w.]+)['"]/)||[])[1]; let ty=(ann||'').replace(/Mapped\[|\]$/g,'').replace(/\s*\|\s*None|Optional\[|\]/g,'').trim(); if (!ty) ty=(rest.match(/^\s*([A-Za-z_]\w*)/)||[])[1]||''; if (fn==='Field'&&!ty) ty=''; put(m,n,ty,(/primary_key\s*=\s*True/.test(rest)?'pk ':'')+(fk?'fk ':'')+(/unique\s*=\s*True/.test(rest)?'uniq':'')); if (fk) rel(m,fk.split('.')[0],'fk',n); continue; }
+        if ((x = s.match(/^(\w+)\s*(?::\s*([^=]+?))?\s*=\s*(?:\w+\.)?[Rr]elationship\((.*)$/))) { const tg=(x[3].match(/^\s*['"](\w+)['"]/)||(x[2]||'').match(/["']?(\w+)["']?\s*\]?$/)||[])[1]; if (tg && !/^(list|List|Optional|None)$/.test(tg)) rel(m,tg,'has',x[1]); continue; }
+        if ((x = s.match(/^(\w+)\s*:\s*([^=]+?)\s*$/)) && !/^(class|def|return|pass)\b/.test(s)) put(m,x[1],x[2].replace(/\s*\|\s*None|Optional\[|\]|Mapped\[/g,''),''); } }
+  } else if (L==='Java' || L==='Kotlin') {
+    for (const m of models) { const cm = text.match(new RegExp('\\bclass\\s+'+esc_(m.name)+'\\b[^{]*\\{')); if (!cm) continue; const body = balancedIn(text, cm.index+cm[0].length-1,'{','}')||'';
+      for (const x of body.matchAll(/((?:@\w+(?:\((?:[^()]|\([^()]*\))*\))?\s*)*)(?:private|protected|public)\s+([\w<>\[\],.? ]+?)\s+(\w+)\s*(?:=[^;]*)?;/g)) { const an=x[1], T=x[2].trim(), n=x[3]; if (/@Transient\b/.test(an) || /\bstatic\b/.test(T)) continue; const inner=(T.match(/<\s*([\w.]+)\s*>/)||[])[1]||T;
+        if (/@OneToMany/.test(an)) { rel(m,inner,'has',n); continue; } if (/@ManyToMany/.test(an)) { rel(m,inner,'m2m',n); continue; } if (/@ManyToOne/.test(an)) { put(m,n,'→ '+lastSeg(inner),'fk'); rel(m,inner,'fk',n); continue; } if (/@OneToOne/.test(an)) { put(m,n,'→ '+lastSeg(inner),'fk'); rel(m,inner,'o2o',n); continue; }
+        put(m,n,T.replace(/\s+/g,' '),(/@Id\b/.test(an)?'pk ':'')+(/unique\s*=\s*true/.test(an)?'uniq':'')); } }
+  } else if (JSFAM.includes(L)) {
+    for (const m of models) {
+      if (m.kind==='TypeORM entity') { const cm = text.match(new RegExp('\\bclass\\s+'+esc_(m.name)+'\\b[^{]*\\{')); if (!cm) continue; const body = balancedIn(text, cm.index+cm[0].length-1,'{','}')||'';
+        for (const x of body.matchAll(/((?:@\w+(?:\((?:[^()]|\([^()]*\))*\))?\s*)+)(?:public\s+|private\s+|readonly\s+)*(\w+)[!?]?\s*:\s*([^;=\n]+)/g)) { const an=x[1], n=x[2], T=x[3].trim().replace(/\[\]$/,''); const to=(an.match(/@(?:ManyToOne|OneToMany|OneToOne|ManyToMany)\(\s*\(\s*\)\s*=>\s*(\w+)/)||[])[1]||T;
+          if (/@OneToMany/.test(an)) rel(m,to,'has',n); else if (/@ManyToMany/.test(an)) rel(m,to,'m2m',n); else if (/@ManyToOne/.test(an)) { put(m,n,'→ '+to,'fk'); rel(m,to,'fk',n); } else if (/@OneToOne/.test(an)) { put(m,n,'→ '+to,'fk'); rel(m,to,'o2o',n); } else if (/@(?:Primary|Column|Create|Update)/.test(an)) put(m,n,T,/@Primary/.test(an)?'pk':''); } }
+      else if (m.kind==='Mongoose model') { const sv=(text.match(new RegExp('mongoose\\.model(?:<[^>]*>)?\\(\\s*[\'"]'+esc_(m.name)+'[\'"]\\s*,\\s*(\\w+)'))||[])[1]; if (!sv) continue; const sm=text.match(new RegExp('(?:const|let|var)\\s+'+esc_(sv)+'\\s*=\\s*(?:new\\s+)?(?:mongoose\\.)?Schema\\s*\\(')); if (!sm) continue; const obj=balancedIn(text, sm.index+sm[0].length-1,'{','}'); if (obj==null) continue; put(m,'_id','ObjectId','pk');
+        for (const part of splitTop(obj)) { const x=part.match(/^\s*['"]?(\w+)['"]?\s*:\s*([\s\S]*)$/); if (!x) continue; const [,n,v]=x; const ref=(v.match(/\bref\s*:\s*['"](\w+)['"]/)||[])[1]; let ty=(v.match(/\btype\s*:\s*([\w.\[\]]+)/)||v.match(/^\s*([\w.\[\]]+)/)||[])[1]||''; ty=ty.replace(/^.*\./,''); if (ref) { put(m,n,'→ '+ref,'fk'); rel(m,ref,'fk',n); } else put(m,n,ty,/unique\s*:\s*true/.test(v)?'uniq':''); } }
+      else if (m.kind==='Drizzle table') { const tm=text.match(new RegExp('(?:pgTable|mysqlTable|sqliteTable)\\(\\s*[\'"]'+esc_(m.name)+'[\'"]\\s*,')); if (!tm) continue; const obj=balancedIn(text, tm.index+tm[0].length,'{','}'); if (obj==null) continue;
+        for (const part of splitTop(obj)) { const x=part.match(/^\s*(\w+)\s*:\s*(\w+)\(([\s\S]*)$/); if (!x) continue; const r=(x[3].match(/references\(\s*\(\)\s*=>\s*(\w+)\./)||[])[1]; put(m,x[1],x[2],(/primaryKey\(/.test(x[3])?'pk ':'')+(r?'fk ':'')+(/unique\(/.test(x[3])?'uniq':'')); if (r) { const tt=(text.match(new RegExp('(?:const|let|var)\\s+'+esc_(r)+'\\s*=\\s*\\w*[tT]able\\(\\s*[\'"](\\w+)'))||[])[1]; rel(m,tt||r,'fk',x[1]); } } }
+      else if (m.kind==='Sequelize model') { const sm=text.match(new RegExp('\\.define\\(\\s*[\'"]'+esc_(m.name)+'[\'"]\\s*,')); if (sm) { const obj=balancedIn(text, sm.index+sm[0].length,'{','}'); if (obj!=null) for (const part of splitTop(obj)) { const x=part.match(/^\s*['"]?(\w+)['"]?\s*:\s*([\s\S]*)$/); if (!x) continue; const ty=(x[2].match(/DataTypes\.(\w+)/)||x[2].match(/^\s*(\w+)/)||[])[1]||''; put(m,x[1],ty,/primaryKey\s*:\s*true/.test(x[2])?'pk':''); } }
+        for (const a of text.matchAll(new RegExp('\\b'+esc_(m.name)+'\\.(belongsTo|hasMany|hasOne|belongsToMany)\\(\\s*(\\w+)','g'))) rel(m,a[2],a[1]==='belongsTo'?'fk':a[1]==='belongsToMany'?'m2m':'has',''); }
+    }
+  } else if (L==='Ruby') {
+    for (const m of models) { const cm = text.match(new RegExp('class\\s+'+esc_(m.name)+'\\b[\\s\\S]*?(?=\\nclass\\s|$)')); if (!cm) continue; for (const x of cm[0].matchAll(/^\s*(belongs_to|has_many|has_one|has_and_belongs_to_many)\s+:(\w+)/gm)) rel(m,x[2].replace(/s$/,''),x[1]==='belongs_to'?'fk':x[1]==='has_and_belongs_to_many'?'m2m':'has',x[2]); }
+  }
 }
 
 const JSFAM = ['JavaScript','TypeScript','Vue','Svelte','Astro'];
@@ -763,7 +830,7 @@ async function analyzeRepo(input, opts = {}, onProgress = ()=>{}){
   await pool(toScan, 12, async f=>{
     const t = await getText(f.path); done++;
     if (done%10===0 || done===toScan.length) onProgress({phase:`Scanning source files (${done}/${toScan.length})…`, pct:16+Math.round(done/toScan.length*66)});
-    if (t==null) return; f.scanned = true; f.loc = t.split('\n').length; const ex = extractFile(f,t); try { ex.classes = extractClasses(f,t); } catch(e){ ex.classes=[]; } try { ex.funcs = extractFunctions(f,t); } catch(e){ ex.funcs=null; } try { ex.http = extractHttpCalls(f,t); } catch(e){ ex.http=[]; } raw.set(f.id, ex);
+    if (t==null) return; f.scanned = true; f.loc = t.split('\n').length; const ex = extractFile(f,t); try { extractModelDetails(f,t,ex.models); } catch(e){} try { ex.classes = extractClasses(f,t); } catch(e){ ex.classes=[]; } try { ex.funcs = extractFunctions(f,t); } catch(e){ ex.funcs=null; } try { ex.http = extractHttpCalls(f,t); } catch(e){ ex.http=[]; } raw.set(f.id, ex);
   });
 
   /* ---------- resolution ---------- */
@@ -1098,6 +1165,17 @@ async function analyzeRepo(input, opts = {}, onProgress = ()=>{}){
   routes.sort((a,b)=>a.path.localeCompare(b.path));
   const uniqRoutes=[]; { const seen=new Set(); for (const r of routes) { const k=r.method+' '+r.path+' '+r.file; if(!seen.has(k)){seen.add(k);uniqRoutes.push(r);} } }
 
+  /* ---------- relations between data models ---------- */
+  const modelEdges = [];
+  { const idxOf = new Map(); const norm = x => String(x||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+    models.forEach((m,i)=>{ for (const k of [m.name, lastSeg(m.name), m.alias]) { const n=norm(k); if (n && !idxOf.has(n)) idxOf.set(n,i); } });
+    const find = t => { const n=norm(lastSeg(t)); return idxOf.has(n)?idxOf.get(n) : idxOf.has(n+'s')?idxOf.get(n+'s') : idxOf.has(n+'es')?idxOf.get(n+'es') : n.endsWith('s')&&idxOf.has(n.slice(0,-1))?idxOf.get(n.slice(0,-1)) : n.endsWith('ies')&&idxOf.has(n.slice(0,-3)+'y')?idxOf.get(n.slice(0,-3)+'y') : null; };
+    const seen = new Set(); const many = new Set(); models.forEach((m,a)=>{ for (const [to,k] of (m.rels||[])) if (k==='many') { const b=find(to); if (b!=null) many.add(a+'>'+b); } });
+    for (const pass of [0,1]) models.forEach((m,a)=>{ for (const [to,k0,via] of (m.rels||[])) { const first = k0==='fk'||k0==='o2o'||k0==='m2m'; if (pass===0 && !first) continue; if (pass===1 && first) continue; const b=find(to); if (b==null || b===a && !first) continue;
+      let k=k0; if (k==='many') k = many.has(b+'>'+a) ? 'm2m' : 'has'; if (k==='has') { const key=b+'>'+a+'fk'; if (!seen.has(key)) { seen.add(key); modelEdges.push([b,a,'fk',via||'']); } continue; }
+      const key = (k==='m2m'||k==='o2o') ? Math.min(a,b)+'~'+Math.max(a,b)+k : a+'>'+b+'fk'; if (seen.has(key)) continue; seen.add(key); modelEdges.push([a,b,k,via||'']); } });
+    if (modelEdges.length>400) modelEdges.length=400; }
+
   /* ---------- which function handles each route ---------- */
   { const unitsByFile = new Map(); for (const k of classes) { if(!unitsByFile.has(k.file)) unitsByFile.set(k.file,[]); unitsByFile.get(k.file).push(k); }
     const fidOf = new Map(files.map(f=>[f.path,f.id]));
@@ -1152,7 +1230,7 @@ async function analyzeRepo(input, opts = {}, onProgress = ()=>{}){
     stats:{...stats, sourceFiles:srcFiles.length, scanned:raw.size, scanTargets:toScan.length, budget, languages, testFiles:stats.byKind.test||0},
     files:files.map(f=>({id:f.id,path:f.path,size:f.size,ext:f.ext,kind:f.kind,lang:f.lang,comp:f.comp,scanned:f.scanned,loc:f.loc||0,imports:[...f.imports],importedBy:[...f.importedBy],externals:[...f.externals],routes:f.routes,models:f.models})),
     classes:classes.map(c=>({mm:c.mm,id:c.id,name:c.name,kind:c.kind,fn:c.fn?1:0,file:c.file,comp:c.comp,line:c.line,methods:c.methods,mlines:c.mlines,ext:c.ext,impl:c.impl})), classEdges, calls, apiCalls:apiCalls.slice(0,4000), apiEdges, comps, edges:edgeList, fileEdges, services:services.map(s=>({...s,links:[...s.links.entries()]})),
-    entries:entriesU, routes:uniqRoutes, models, env:envList,
+    entries:entriesU, routes:uniqRoutes, models, modelEdges, env:envList,
     compose:{files:composeInfo, services:composeServices}, docker:dockerInfo, workflows, scripts, makeTargets, procfile, deployTargets,
     infraFiles:infraFiles.map(f=>f.path).slice(0,60),
     manifests:manifests.map(m=>({path:m.path,eco:m.eco,name:m.name,deps:m.deps.length,devDeps:m.devDeps.length})),

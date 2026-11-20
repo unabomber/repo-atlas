@@ -451,11 +451,11 @@ function drawerHome(){
 }
 
 /* ---------------- tabs ---------------- */
-const TABS = [['overview','Overview'],['arch','Architecture'],['flows','Flows'],['api','API & Data'],['trace','Feature trace'],['runtime','Runtime'],['files','Files'],['export','Export']];
+const TABS = [['overview','Overview'],['arch','Architecture'],['flows','Flows'],['api','API & Data'],['trace','Feature trace'],['data','Data model'],['runtime','Runtime'],['files','Files'],['export','Export']];
 function showTab(t){
   UI.tab=t; document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
   const p=$('#panel'); p.className='panel'+(t==='arch'||t==='files'?' flush':''); p.scrollTop=0;
-  ({overview:renderOverview,arch:renderArch,flows:renderFlows,api:renderApi,trace:renderTrace,runtime:renderRuntime,files:renderFiles,export:renderExport})[t]();
+  ({overview:renderOverview,arch:renderArch,flows:renderFlows,api:renderApi,trace:renderTrace,data:renderData,runtime:renderRuntime,files:renderFiles,export:renderExport})[t]();
 }
 function insights(){
   const out=[]; const cs=A.comps;
@@ -672,12 +672,13 @@ function traceDetail(n){
   if (n.epRt!=null) { const rt=A.routes[n.epRt], cs=traceUi(n.epRt); h=`<div><span class="method m-${rt.method}">${rt.method}</span> <span class="mono">${esc(rt.path)}</span></div><div class="hint">Defined in <a class="mono" href="${ghBlob(rt.file)}${rt.line?'#L'+rt.line:''}" target="_blank" rel="noopener">${esc(rt.file)}${rt.line?':'+rt.line:''}</a>${rt.comp>=0?' · '+compLink(rt.comp):''}</div>${rt.hc!=null?`<div class="hint">Handled by <a class="link" data-method="${rt.hc}.${rt.hm}">${esc(mname(rt.hc,rt.hm))}</a></div>`:'<div class="hint">The handler is written inline in the route file, so its calls are not traced.</div>'}<h5>${cs.length} UI call${cs.length!==1?'s':''}</h5>${cs.length?`<ul class="clean">${cs.slice(0,12).map(apiCallRow).join('')}</ul>`:'<div class="hint">No frontend request in this repo reaches it.</div>'}`; }
   else if (n.unitKey) { const [c,m]=n.unitKey.split('.').map(Number), k=A.classes[c], key=n.unitKey, f=A.files[k.file]; const out=D.mOut.get(key)||[], inc=D.mIn.get(key)||[]; const ml=(k.mlines&&k.mlines[m])||k.line;
     h=`<div><b>${esc(mname(c,m))}</b></div><div class="hint">${A.comps[k.comp]?compLink(k.comp)+' · ':''}<a class="mono" href="${ghBlob(f.path)}#L${ml}" target="_blank" rel="noopener">${esc(f.path)}:${ml}</a></div><div style="margin:8px 0"><button class="btn sm" data-focus="${key}">Open in call graph</button> <button class="btn sm" data-impact="${key}">What depends on this?</button></div><h5>Calls (${out.length})</h5>${callList(out,'Makes no calls to other known functions.')}<h5>Called by (${inc.length})</h5>${callList(inc,'No known callers.')}`; }
-  else if (n.modelIdx!=null) { const mo=A.models[n.modelIdx]; const users=A.classes.flatMap(k=>(k.mm||[]).flatMap((x,i)=>x.includes(n.modelIdx)?[[k.id,i]]:[])); h=`<div><b>${esc(mo.name)}</b> <span class="pill">${esc(mo.kind)}</span></div><div class="hint">Defined in <a class="mono" href="${ghBlob(mo.file)}" target="_blank" rel="noopener">${esc(mo.file)}</a></div><h5>Used by ${users.length} function${users.length!==1?'s':''}</h5>${callList(users,'None found.')}`; }
+  else if (n.modelIdx!=null) { const mo=A.models[n.modelIdx]; const users=A.classes.flatMap(k=>(k.mm||[]).flatMap((x,i)=>x.includes(n.modelIdx)?[[k.id,i]]:[])); h=`<div><b>${esc(mo.name)}</b> <span class="pill">${esc(mo.kind)}</span></div><div class="hint">Defined in <a class="mono" href="${ghBlob(mo.file)}" target="_blank" rel="noopener">${esc(mo.file)}</a></div><div style="margin:8px 0"><button class="btn sm" data-model="${n.modelIdx}">Open in data model</button></div><h5>Used by ${users.length} function${users.length!==1?'s':''}</h5>${callList(users,'None found.')}`; }
   else { const f=A.files[n.fileKey]; const cs=(A.apiCalls||[]).filter(c=>c.file===f.path&&c.rt>=0); h=`<div><b>${esc(base(f.path))}</b></div><div class="hint mono"><a href="${ghBlob(f.path)}" target="_blank" rel="noopener">${esc(f.path)}</a></div><h5>${cs.length} HTTP call${cs.length!==1?'s':''} from this file</h5><ul class="clean">${cs.slice(0,12).map(apiCallRow).join('')}</ul>`; }
   el.innerHTML=`<div class="box">${h}</div>`;
   el.querySelectorAll('[data-comp]').forEach(a=>a.onclick=()=>{ showTab('arch'); setTimeout(()=>selectComp(+a.dataset.comp),50); });
   el.querySelectorAll('[data-method]').forEach(a=>a.onclick=()=>{ const [c,m]=a.dataset.method.split('.').map(Number); focusMethod(c,m); });
   el.querySelectorAll('[data-focus]').forEach(a=>a.onclick=()=>{ const [c,m]=a.dataset.focus.split('.').map(Number); focusMethod(c,m); });
+  el.querySelectorAll('[data-model]').forEach(a=>a.onclick=()=>{ UI.data.sel=+a.dataset.model; showTab('data'); });
   el.querySelectorAll('[data-impact]').forEach(a=>a.onclick=()=>{ UI.impact={key:a.dataset.impact}; showTab('impact'); });
 }
 function renderTrace(){
@@ -705,6 +706,63 @@ function renderTrace(){
     TGRAPH.set(td.nodes,td.edges,'layered',L); requestAnimationFrame(()=>TGRAPH.fit());
     const first=td.nodes.find(n=>n.epRt!=null); if (first && cur.rts.length===1) { TGRAPH.select(first.id); traceDetail(first); }
   } else $('#g5').parentNode.innerHTML='<div class="hint" style="padding:16px">Nothing to draw for this selection.</div>';
+}
+
+/* ---------------- data model (ER) ---------------- */
+let DGRAPH=null, MRT=null;
+UI.data = {sel:null, q:''};
+function modelRoutes(){
+  if (MRT && MRT.A===A) return MRT.m; const m=new Map();
+  A.routes.forEach((rt,ri)=>{ if (rt.hc==null) return; const seen=new Set([rt.hc+'.'+rt.hm]); let q=[[rt.hc,rt.hm,0]]; const got=new Set();
+    while (q.length) { const [c,mi,d]=q.shift(); const mm=A.classes[c].mm&&A.classes[c].mm[mi]; if (mm) mm.forEach(x=>got.add(x)); if (d>=3) continue; let n=0; for (const [cb,mb] of (D.mOut.get(c+'.'+mi)||[])) { if (n++>=8) break; const k=cb+'.'+mb; if (!seen.has(k)) { seen.add(k); q.push([cb,mb,d+1]); } } }
+    got.forEach(x=>{ if(!m.has(x)) m.set(x,[]); m.get(x).push(ri); }); });
+  MRT={A,m}; return m;
+}
+function modelFlags(fl){ return (/pk/.test(fl)?'<span class="pill" style="background:var(--acc);color:#fff">PK</span> ':'')+(/fk/.test(fl)?'<span class="pill">FK</span> ':'')+(/uniq/.test(fl)?'<span class="pill">unique</span>':''); }
+function dataGraph(){
+  const E=A.modelEdges||[]; const deg=new Map(); E.forEach(([a,b])=>{ deg.set(a,(deg.get(a)||0)+1); deg.set(b,(deg.get(b)||0)+1); });
+  let ids=A.models.map((_,i)=>i).sort((a,b)=>(deg.get(b)||0)-(deg.get(a)||0)); const trimmed=ids.length>120; ids=ids.slice(0,120); const set=new Set(ids);
+  const edges=E.filter(([a,b])=>set.has(a)&&set.has(b)&&a!==b); const lvl=new Map(ids.map(i=>[i,0]));
+  for (let it=0; it<8; it++) { let ch=false; for (const [a,b,k] of edges) { if (k==='m2m'||k==='o2o') continue; if (lvl.get(a)<=lvl.get(b) && lvl.get(b)+1<8) { lvl.set(a,lvl.get(b)+1); ch=true; } } if (!ch) break; }
+  const used=modelRoutes();
+  const nodes=ids.map(i=>{ const m=A.models[i]; return {id:'d'+i,col:lvl.get(i),kind:'comp',weight:deg.get(i)||0,label:m.name,sub:(m.fields?m.fields.length+' fields':m.kind)+((used.get(i)||[]).length?' · '+used.get(i).length+' endpoints':''),color:'var(--warn)',modelIdx:i,title:m.name+' ('+m.kind+')'}; });
+  return {nodes, edges:edges.map(([a,b,k,via])=>({s:'d'+a,t:'d'+b,w:1,kind:'data',title:A.models[a].name+(k==='m2m'?' ↔ ':k==='o2o'?' ↔ (one-to-one) ':' → references ')+A.models[b].name+(via?' via '+via:'')})), trimmed};
+}
+function dataDetail(i){
+  UI.data.sel=i; const m=A.models[i]; const rts=(modelRoutes().get(i)||[]); const E=A.modelEdges||[];
+  const outs=E.filter(e=>e[0]===i), ins=E.filter(e=>e[1]===i);
+  const rl=(arr,dir)=>arr.map(e=>{ const o=dir?e[1]:e[0]; return `<li><a class="link" data-model="${o}">${esc(A.models[o].name)}</a> <span class="hint">${e[2]==='m2m'?'many-to-many':e[2]==='o2o'?'one-to-one':dir?'referenced by this table':'has a foreign key to this table'}${e[3]?' · '+esc(e[3]):''}</span></li>`; }).join('');
+  const users=A.classes.flatMap(k=>(k.mm||[]).flatMap((x,mi)=>x.includes(i)?[[k.id,mi]]:[]));
+  $('#dataDetail').innerHTML=`<div class="box"><div><b style="font-size:15px">${esc(m.name)}</b> <span class="pill">${esc(m.kind)}</span> ${m.comp>=0?compLink(m.comp):''}</div>
+   <div class="hint">Defined in <a class="mono" href="${ghBlob(m.file)}" target="_blank" rel="noopener">${esc(m.file)}</a></div>
+   ${m.fields&&m.fields.length?`<h5>${m.fields.length} field${m.fields.length>1?'s':''}</h5><table><tr><th>Name</th><th>Type</th><th></th></tr>${m.fields.map(f=>`<tr><td class="mono">${esc(f[0])}</td><td class="mono">${esc(f[1])}</td><td>${modelFlags(f[2])}</td></tr>`).join('')}</table>`:'<div class="hint" style="margin-top:8px">Fields could not be read from this definition.</div>'}
+   ${outs.length||ins.length?`<h5>Relations</h5><ul class="clean">${rl(outs,true)}${rl(ins,false)}</ul>`:''}
+   <h5>Endpoints that reach this data (${rts.length})</h5>${rts.length?`<ul class="clean">${rts.slice(0,20).map(ri=>{ const r=A.routes[ri]; return `<li><span class="method m-${r.method}">${r.method}</span> <span class="mono">${esc(r.path)}</span> <a class="link" data-trace="${ri}">trace</a></li>`; }).join('')}${rts.length>20?`<li class="hint">+${rts.length-20} more</li>`:''}</ul>`:'<div class="hint">No endpoint was traced to it (handlers are followed up to 3 calls deep).</div>'}
+   <h5>Used by ${users.length} function${users.length!==1?'s':''}</h5><div>${users.slice(0,24).map(([c,mi])=>`<a class="tag mono link" data-method="${c}.${mi}">${esc(mname(c,mi))}</a>`).join(' ')||'<span class="hint">None found.</span>'}${users.length>24?` <span class="hint">+${users.length-24} more</span>`:''}</div></div>`;
+  const d=$('#dataDetail');
+  d.querySelectorAll('[data-comp]').forEach(a=>a.onclick=()=>{ showTab('arch'); setTimeout(()=>selectComp(+a.dataset.comp),50); });
+  d.querySelectorAll('[data-model]').forEach(a=>a.onclick=()=>{ const j=+a.dataset.model; if (DGRAPH&&DGRAPH.byId.has('d'+j)) { DGRAPH.select('d'+j); DGRAPH.focus('d'+j); } dataDetail(j); });
+  d.querySelectorAll('[data-trace]').forEach(a=>a.onclick=()=>{ UI.trace.sel='r:'+a.dataset.trace; UI.trace.q=''; showTab('trace'); });
+  d.querySelectorAll('[data-method]').forEach(a=>a.onclick=()=>{ const [c,mi]=a.dataset.method.split('.').map(Number); focusMethod(c,mi); });
+  document.querySelectorAll('.mcard').forEach(c=>c.classList.toggle('on',+c.dataset.m===i));
+}
+function renderData(){
+  const ms=A.models; const E=A.modelEdges||[];
+  if (!ms.length) { $('#panel').innerHTML=`<div class="wrap"><h3>Data model</h3><div class="callout">No data models were detected. Supported: Prisma, SQL, Django, SQLAlchemy/SQLModel, JPA, TypeORM, Drizzle, Mongoose, Sequelize and ActiveRecord.</div></div>`; return; }
+  const used=modelRoutes(); const touched=ms.filter((_,i)=>(used.get(i)||[]).length).length;
+  const q=UI.data.q.toLowerCase(); const cards=ms.map((m,i)=>({m,i})).filter(({m})=>!q||(m.name+' '+m.kind+' '+(m.fields||[]).map(f=>f[0]).join(' ')).toLowerCase().includes(q));
+  const g=E.length?dataGraph():null; const colMax=g?Math.max(1,...[0,1,2,3,4,5,6,7].map(k=>g.nodes.filter(n=>n.col===k).length)):0; const gh=Math.max(280,Math.min(620,Math.min(colMax,8)*66+110));
+  $('#panel').innerHTML=`<div class="wrap"><h3>Data model <small>${ms.length} table${ms.length>1?'s':''} / models · ${E.length} relation${E.length!==1?'s':''} · ${touched} reached by an endpoint</small></h3>
+   <p class="hint">${g?'Tables that others point to are on the left; the tables that reference them are to the right. Dashed lines are foreign keys or references.':'No relations between these models were detected.'} Click a table for its fields, relations and the endpoints that reach it.</p>
+   ${g?`<div class="box" style="padding:0;height:${gh}px;position:relative;overflow:hidden"><div class="canvas" style="position:absolute;inset:0"><svg id="g6"></svg></div></div>${g.trimmed?'<div class="hint">Showing the 120 most connected tables.</div>':''}`:''}
+   <div id="dataDetail" style="margin-top:10px"><div class="hint">Click a table to see its columns.</div></div>
+   <input class="filter" id="dataF" style="margin-top:18px" placeholder="Filter tables or columns…" value="${esc(UI.data.q)}">
+   <div class="mgrid">${cards.slice(0,120).map(({m,i})=>`<div class="mcard" data-m="${i}"><b>${esc(m.name)}</b><span class="hint"> ${esc(m.kind)}</span>${(m.fields||[]).slice(0,7).map(f=>`<div class="mono mf">${esc(f[0])} <span class="hint">${esc(f[1])}</span> ${/pk/.test(f[2])?'🔑':''}${/fk/.test(f[2])?'🔗':''}</div>`).join('')}${(m.fields||[]).length>7?`<div class="hint">+${m.fields.length-7} more</div>`:''}</div>`).join('')}</div>${cards.length>120?'<div class="hint">Showing 120. Use the filter.</div>':''}</div>`;
+  $('#dataF').oninput=e=>{ UI.data.q=e.target.value; const pos=e.target.selectionStart; renderData(); const x=$('#dataF'); x.focus(); x.setSelectionRange(pos,pos); };
+  document.querySelectorAll('.mcard').forEach(c=>c.onclick=()=>{ const j=+c.dataset.m; if (DGRAPH&&DGRAPH.byId.has('d'+j)) { DGRAPH.select('d'+j); DGRAPH.focus('d'+j); } dataDetail(j); window.scrollTo&&$('#dataDetail').scrollIntoView({block:'nearest'}); });
+  if (g) { DGRAPH=GraphView($('#g6'),{node:n=>{ DGRAPH.select(n.id); dataDetail(n.modelIdx); }, edge:()=>{}, background:()=>DGRAPH.select(null)});
+    const L=layeredLayout(g.nodes,g.edges,n=>n.col,{titles:['Referenced tables','Reference those','Then these','And these','','','',''],h:52,maxRows:9}); DGRAPH.set(g.nodes,g.edges,'layered',L); requestAnimationFrame(()=>DGRAPH.fit()); }
+  if (UI.data.sel!=null && UI.data.sel<ms.length) { dataDetail(UI.data.sel); if (DGRAPH&&DGRAPH.byId.has('d'+UI.data.sel)) DGRAPH.select('d'+UI.data.sel); }
 }
 
 let RGRAPH=null;
