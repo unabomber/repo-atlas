@@ -58,7 +58,7 @@ function GraphView(svg, cb){
   let grpEls = [];
   const G = {nodes:[], edges:[], mode:'layered', byId:new Map(), view:{x:0,y:0,k:1}, sel:null, nodeEls:new Map(), edgeEls:[]};
   const mid = id => `url(#a-${id}-${svg.id})`;
-  const apply = () => vp.setAttribute('transform',`translate(${G.view.x} ${G.view.y}) scale(${G.view.k})`);
+  const apply = () => { vp.setAttribute('transform',`translate(${G.view.x} ${G.view.y}) scale(${G.view.k})`); svg.classList.toggle('lowz',G.view.k<0.75); };
   function anchor(n, side){ return side==='r'?{x:n.x+n.w,y:n.y+n.h/2}:{x:n.x,y:n.y+n.h/2}; }
   function pathFor(e){
     const s = G.byId.get(e.s), t = G.byId.get(e.t); if(!s||!t) return '';
@@ -101,11 +101,13 @@ function GraphView(svg, cb){
     const ti = mk('title',{},g); ti.textContent = n.title||n.label;
     return g;
   }
+  function dragGrp(el,gid){ let d=null; el.addEventListener('pointerdown',ev=>{ ev.stopPropagation(); const mem=G.nodes.filter(n=>n.grp===gid); d={sx:ev.clientX,sy:ev.clientY,o:mem.map(n=>[n,n.x,n.y])}; el.setPointerCapture(ev.pointerId); }); el.addEventListener('pointermove',ev=>{ if(!d) return; const dx=(ev.clientX-d.sx)/G.view.k, dy=(ev.clientY-d.sy)/G.view.k; d.o.forEach(([n,x,y])=>{ n.x=x+dx; n.y=y+dy; setPos(n); }); updEdges(); updGroups(); }); el.addEventListener('pointerup',()=>{ d=null; }); }
+  function spread(f){ if (!G.nodes.length) return; const cx=G.nodes.reduce((a,n)=>a+n.x,0)/G.nodes.length, cy=G.nodes.reduce((a,n)=>a+n.y,0)/G.nodes.length; for (const n of G.nodes) { n.x=cx+(n.x-cx)*f; n.y=cy+(n.y-cy)*f; setPos(n); } updEdges(); updGroups(); }
   function render(){
     gL.innerHTML=gH.innerHTML=gE.innerHTML=gN.innerHTML=''; G.nodeEls.clear(); G.edgeEls=[];
     G.byId = new Map(G.nodes.map(n=>[n.id,n]));
     for (const l of (G.lanes||[])) mk('rect',{class:'lane',x:l.x,y:l.y,width:l.w,height:l.h,rx:14},gL);
-    grpEls = (G.groups||[]).map(g=>{ const c=mk('circle',{class:'lane',style:`stroke:${g.color};fill:color-mix(in srgb,${g.color} 7%,transparent)`},gL); const t=mk('text',{class:'colhdr','text-anchor':'middle',style:`fill:${g.color}`},gL); t.textContent=short(g.label,28); return {id:g.id,c,t}; });
+    grpEls = (G.groups||[]).map(g=>{ const c=mk('circle',{class:'lane',style:`stroke:${g.color};fill:color-mix(in srgb,${g.color} 7%,transparent)`},gL); const t=mk('text',{class:'colhdr','text-anchor':'middle',style:`fill:${g.color}`},gL); t.textContent=short(g.label,28); dragGrp(c,g.id); dragGrp(t,g.id); c.style.pointerEvents='stroke'; c.style.cursor='move'; t.style.cursor='move'; return {id:g.id,c,t}; });
     for (const h of (G.headers||[])) { const t=mk('text',{class:'colhdr',x:h.x,y:h.y},gH); t.textContent=h.text; }
     const maxw = Math.max(1,...G.edges.map(e=>e.w||0));
     for (const e of G.edges) {
@@ -163,6 +165,12 @@ function GraphView(svg, cb){
   svg.addEventListener('pointerup',()=>{ if(pan&&!pan.moved){ cb.background&&cb.background(); } pan=null; svg.classList.remove('pan'); });
   svg.addEventListener('wheel',ev=>{ ev.preventDefault(); const r=svg.getBoundingClientRect(); const mx=ev.clientX-r.left,my=ev.clientY-r.top; const f=Math.exp(-ev.deltaY*0.0015); const nk=Math.max(.05,Math.min(3,G.view.k*f)); G.view.x=mx-(mx-G.view.x)*(nk/G.view.k); G.view.y=my-(my-G.view.y)*(nk/G.view.k); G.view.k=nk; apply(); },{passive:false});
   G.set = (nodes,edges,mode,extra={}) => { G.nodes=nodes; G.edges=edges; G.mode=mode; G.headers=extra.headers; G.lanes=extra.lanes; G.groups=extra.groups; render(); };
+  { const host=svg.parentNode; if (host) { if (getComputedStyle(host).position==='static') host.style.position='relative'; host.querySelectorAll('.gctl').forEach(e=>e.remove());
+    const ctl=document.createElement('div'); ctl.className='gctl'; ctl.innerHTML='<button class="btn sm" data-a="out" title="Move everything further apart. You can also drag any node or group.">Spread out</button><button class="btn sm" data-a="in" title="Pull everything closer together">Tighten</button><button class="btn sm" data-a="fit" title="Fit the whole graph in view">Fit</button>'; host.appendChild(ctl);
+    ctl.addEventListener('pointerdown',e=>e.stopPropagation());
+    ctl.addEventListener('click',e=>{ const a=e.target.dataset&&e.target.dataset.a; if (a==='out') spread(1.3); else if (a==='in') spread(1/1.3); else if (a==='fit') fit(); });
+    G.ctl=ctl; } }
+  const setOld=G.set; G.set=(nodes,edges,mode,extra)=>{ setOld(nodes,edges,mode,extra); if (G.ctl) G.ctl.querySelectorAll('[data-a=out],[data-a=in]').forEach(b=>b.style.display=mode==='force'?'':'none'); };
   G.select=select; G.fit=fit; G.focus=id=>{ const n=G.byId.get(id); if(!n)return; const r=svg.getBoundingClientRect(); const cx=G.mode==='force'?n.x:n.x+n.w/2, cy=G.mode==='force'?n.y:n.y+n.h/2; G.view.x=r.width/2-cx*G.view.k; G.view.y=r.height/2-cy*G.view.k; apply(); };
   return G;
 }
@@ -187,7 +195,7 @@ function layeredLayout(nodes, edges, colOf, opts={}){
   return {headers, lanes};
 }
 function forceLayout(nodes, edges, W=900, H=600){
-  const n = nodes.length; if(!n) return;
+  const n = nodes.length; if(!n) return; { const sc=Math.max(1,Math.sqrt(n/40)); W*=sc; H*=sc; }
   nodes.forEach((p,i)=>{ const a=i/n*Math.PI*2; p.x=W/2+Math.cos(a)*W*0.35; p.y=H/2+Math.sin(a)*H*0.35; p.vx=0; p.vy=0; });
   const idx = new Map(nodes.map((p,i)=>[p.id,i]));
   const links = edges.map(e=>[idx.get(e.s),idx.get(e.t)]).filter(l=>l[0]!=null&&l[1]!=null);
