@@ -600,8 +600,39 @@ function parseRepoInput(s){
   return {owner:m[1], repo:m[2], ref};
 }
 
+/* ---------- .gitignore matcher (used for local folders) ---------- */
+function makeGitignore(){
+  const rules = [];
+  return {
+    add(base, text){
+      for (let line of String(text).split(/\r?\n/)) {
+        line = line.replace(/\s+$/,''); if (!line || line[0]==='#') continue;
+        let neg = false; if (line[0]==='!') { neg = true; line = line.slice(1); }
+        let dirOnly = false; if (line.endsWith('/')) { dirOnly = true; line = line.slice(0,-1); }
+        line = line.replace(/^\\(?=[#!])/,''); if (!line) continue;
+        const anchored = line.includes('/'); line = line.replace(/^\//,'');
+        let re = '';
+        for (let i=0;i<line.length;i++) { const c=line[i];
+          if (c==='*') { if (line[i+1]==='*') { i++; if (line[i+1]==='/') { i++; re += '(?:.*/)?'; } else re += '.*'; } else re += '[^/]*'; }
+          else if (c==='?') re += '[^/]';
+          else if (c==='[') { const j=line.indexOf(']',i+1); if (j>i) { re += line.slice(i,j+1).replace('[!','[^'); i=j; } else re += '\\['; }
+          else re += c.replace(/[.+^${}()|\\]/g,'\\$&');
+        }
+        try { rules.push({base, neg, dirOnly, re:new RegExp('^'+(anchored?'':'(?:.*/)?')+re+'$')}); } catch(e){}
+      }
+    },
+    ignored(path, isDir){
+      let res = false;
+      for (const r of rules) { if (r.base && !path.startsWith(r.base)) continue; if (r.dirOnly && !isDir) continue; if (r.re.test(path.slice(r.base.length))) res = !r.neg; }
+      return res;
+    },
+    ignoredDeep(path){ const parts = path.split('/'); let acc=''; for (let i=0;i<parts.length-1;i++) { acc += parts[i]; if (this.ignored(acc,true)) return true; acc += '/'; } return this.ignored(path,false); }
+  };
+}
+
 async function analyzeRepo(input, opts = {}, onProgress = ()=>{}){
-  const {owner, repo, ref} = parseRepoInput(input);
+  const LOCAL = opts.local || null;
+  let {owner, repo, ref} = LOCAL ? {owner:LOCAL.owner||'local', repo:LOCAL.name||'folder', ref:null} : parseRepoInput(input);
   const token = (opts.token||'').replace(/^(Bearer|token)\s+/i,'').replace(/[\s"']/g,'') || null, budget = opts.budget || 500;
   const hdr = {Accept:'application/vnd.github+json'}; if (token) hdr.Authorization = 'Bearer '+token;
   async function ghJson(path, step){
@@ -616,19 +647,29 @@ async function analyzeRepo(input, opts = {}, onProgress = ()=>{}){
     if (!r.ok) throw new Error('GitHub API error '+r.status);
     return r.json();
   }
+  let meta, branch, blobs, getText, tree = {truncated:false};
+  if (LOCAL) {
+    onProgress({phase:'Reading local folder…', pct:6});
+    meta = {html_url:null, description:null, stargazers_count:null, language:null, license:null, topics:[], pushed_at:LOCAL.modified||null, size:null, forks_count:null, homepage:null};
+    branch = LOCAL.branch || 'local';
+    blobs = LOCAL.files.map(f=>({path:f.path,size:f.size||0}));
+    const lmap = new Map(LOCAL.files.map(f=>[f.path,f]));
+    getText = async path => { try { const f = lmap.get(path); return f ? await f.read() : null; } catch(e){ return null; } };
+  } else {
   onProgress({phase:'Fetching repository metadata…', pct:2});
-  const meta = await ghJson(`/repos/${owner}/${repo}`,'looking up the repo — the token cannot see it');
-  const branch = ref || meta.default_branch;
+  meta = await ghJson(`/repos/${owner}/${repo}`,'looking up the repo — the token cannot see it');
+  branch = ref || meta.default_branch;
   onProgress({phase:`Reading file tree (${branch})…`, pct:6});
-  const tree = await ghJson(`/repos/${owner}/${repo}/git/trees/${encodeURI(branch)}?recursive=1`,'listing files — repo is visible but Contents: Read-only is missing, or the branch name is wrong');
-  const blobs = tree.tree.filter(e=>e.type==='blob');
-  async function getText(path){
+  tree = await ghJson(`/repos/${owner}/${repo}/git/trees/${encodeURI(branch)}?recursive=1`,'listing files — repo is visible but Contents: Read-only is missing, or the branch name is wrong');
+  blobs = tree.tree.filter(e=>e.type==='blob');
+  getText = async function(path){
     try {
       let r;
       if (token) r = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${encodeURI(path)}?ref=${encodeURIComponent(branch)}`,{headers:{Accept:'application/vnd.github.raw',Authorization:'Bearer '+token}});
       else r = await fetch(`https://raw.githubusercontent.com/${owner}/${repo}/${encodeURI(branch)}/${encodeURI(path)}`);
       if (!r.ok) return null; return await r.text();
     } catch(e){ return null; }
+  }
   }
   async function pool(items, n, fn){ let i=0; await Promise.all(Array.from({length:n},async()=>{ while(i<items.length){ const k=i++; await fn(items[k],k); } })); }
 
@@ -1058,7 +1099,7 @@ async function analyzeRepo(input, opts = {}, onProgress = ()=>{}){
   const apiEdges = [...apiEdgeMap.values()].map(e=>({s:e.s,t:e.t,w:e.w,eps:e.eps.size,ex:e.ex}));
   onProgress({phase:'Done', pct:100});
   return {
-    repo:{owner,name:repo,branch,url:meta.html_url,description:meta.description,stars:meta.stargazers_count,language:meta.language,license:meta.license&&meta.license.spdx_id,topics:meta.topics||[],pushed:meta.pushed_at,size:meta.size,forks:meta.forks_count,homepage:meta.homepage},
+    repo:{owner,name:repo,branch,local:!!LOCAL,remote:LOCAL?(LOCAL.remote||null):null,url:meta.html_url,description:meta.description,stars:meta.stargazers_count,language:meta.language,license:meta.license&&meta.license.spdx_id,topics:meta.topics||[],pushed:meta.pushed_at,size:meta.size,forks:meta.forks_count,homepage:meta.homepage},
     stats:{...stats, sourceFiles:srcFiles.length, scanned:raw.size, scanTargets:toScan.length, budget, languages, testFiles:stats.byKind.test||0},
     files:files.map(f=>({id:f.id,path:f.path,size:f.size,ext:f.ext,kind:f.kind,lang:f.lang,comp:f.comp,scanned:f.scanned,loc:f.loc||0,imports:[...f.imports],importedBy:[...f.importedBy],externals:[...f.externals],routes:f.routes,models:f.models})),
     classes:classes.map(c=>({id:c.id,name:c.name,kind:c.kind,fn:c.fn?1:0,file:c.file,comp:c.comp,line:c.line,methods:c.methods,mlines:c.mlines,ext:c.ext,impl:c.impl})), classEdges, calls, apiCalls:apiCalls.slice(0,4000), apiEdges, comps, edges:edgeList, fileEdges, services:services.map(s=>({...s,links:[...s.links.entries()]})),

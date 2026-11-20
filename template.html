@@ -124,6 +124,8 @@ dialog{background:var(--panel);color:var(--text);border:1px solid var(--line);bo
 dialog input{width:100%;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px;margin:8px 0}
 .filter{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:6px 10px;outline:none;width:260px;margin-bottom:10px}
 .hint{color:var(--mute);font-size:12.5px}
+a[href="#nolink"]{pointer-events:none;color:inherit!important;text-decoration:none!important;cursor:default}
+a.btn[href="#nolink"]{display:none}
 </style>
 </head>
 <body>
@@ -131,6 +133,7 @@ dialog input{width:100%;background:var(--card);border:1px solid var(--line);bord
   <div class="logo"><i></i>Repo Atlas</div>
   <form class="go" id="goform"><input type="text" id="repoInput" placeholder="owner/repo or https://github.com/owner/repo  (add @branch to pick a branch)" autocomplete="off" spellcheck="false"><select class="btn" id="depth" title="How many source files to read for import analysis"><option value="250">Quick</option><option value="600" selected>Standard</option><option value="1500">Deep</option></select><button class="btn pri" type="submit">Analyze</button></form>
   <button class="btn" id="tokenBtn" title="GitHub token (private repos / rate limits)">⚙ Token</button>
+  <button class="btn" id="pickDir" title="Analyze a folder on this computer. It is read in your browser and never uploaded.">📁 Local folder</button>
   <button class="btn" id="loadJson" title="Load a previously exported analysis JSON">Load JSON</button>
   <button class="btn" id="themeBtn" title="Toggle theme">◐</button>
 </header>
@@ -138,6 +141,7 @@ dialog input{width:100%;background:var(--card);border:1px solid var(--line);bord
 <main id="main"></main>
 <dialog id="tokenDlg"><form method="dialog"><b>GitHub token (optional)</b><p class="hint">Needed for private repos, and raises the API limit from 60 to 5,000 requests/hour. Stored only in this browser (localStorage) and sent only to api.github.com.</p><input id="tokenInput" type="password" placeholder="ghp_… or github_pat_…" autocomplete="off"><div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" value="clear">Clear</button><button class="btn pri" value="save">Save</button></div></form></dialog>
 <input type="file" id="fileIn" accept=".json" hidden>
+<input type="file" id="dirIn" webkitdirectory multiple hidden>
 <script>
 /*ANALYZER*/
 /*UI*/
