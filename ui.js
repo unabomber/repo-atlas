@@ -268,7 +268,7 @@ function drawerComp(c){
    <div class="hint" style="font-size:13px;color:var(--text)">${esc(describeComp(c))}</div>
    <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
      <select class="btn sm" id="roleSel" title="Reassign this component's layer">${ROLE_ORDER.map(r=>`<option value="${r}"${r===c.role?' selected':''}>${ROLE_LABEL[r]}</option>`).join('')}</select>
-     <button class="btn sm" id="drillBtn">Explore files →</button>${c.classCount?`<button class="btn sm" id="clsBtn">Explore classes (${c.classCount}) →</button>`:''}${c.callCount?`<button class="btn sm" id="mthBtn">Method calls (${c.callCount}) →</button>`:''}
+     <button class="btn sm" id="drillBtn">Explore files →</button>${c.classCount?`<button class="btn sm" id="clsBtn">Explore classes (${c.classCount}) →</button>`:''}${c.callCount?`<button class="btn sm" id="mthBtn">Function &amp; method calls (${c.callCount}) →</button>`:''}
      ${c.path?`<a class="btn sm" href="${ghTree(c.path)}" target="_blank" rel="noopener">GitHub ↗</a>`:''}
    </div>
    ${c.pkg?`<h5>Package</h5><div class="mono">${esc(c.pkg.name||'')} <span class="hint">(${esc(c.pkg.eco)})</span></div>`:''}
@@ -291,8 +291,8 @@ function drawerComp(c){
 function drawerDrillHead(c){
   const n = c.classCount||0;
   $('#drawer').innerHTML = `<h4>${esc(c.label)}</h4>
-   <div class="toolbar-in" style="margin:8px 0"><div class="grp2"><button data-m="files" class="${UI.drillMode==='files'?'on':''}">Files</button><button data-m="classes" class="${UI.drillMode==='classes'?'on':''}" ${n?'':'disabled title="No classes/types detected here"'}>Classes${n?' ('+n+')':''}</button><button data-m="methods" class="${UI.drillMode==='methods'?'on':''}" ${c.callCount?'':'disabled title="No calls between class methods detected here"'}>Methods${c.callCount?' ('+c.callCount+')':''}</button></div></div>
-   <div class="hint">${UI.drillMode==='methods' ? 'Each circle is a method, grouped inside a dashed ring per class. Arrows read “calls”: <b style="color:var(--acc)">blue</b> across classes, dotted within one class. Calls are matched by method name and the receiver’s declared type, so treat them as a very good guess, not a compiler.' : UI.drillMode==='classes'
+   <div class="toolbar-in" style="margin:8px 0"><div class="grp2"><button data-m="files" class="${UI.drillMode==='files'?'on':''}">Files</button><button data-m="classes" class="${UI.drillMode==='classes'?'on':''}" ${n?'':'disabled title="No classes/types detected here"'}>Classes${n?' ('+n+')':''}</button><button data-m="methods" class="${UI.drillMode==='methods'?'on':''}" ${c.callCount?'':'disabled title="No calls between class methods detected here"'}>Calls${c.callCount?' ('+c.callCount+')':''}</button></div></div>
+   <div class="hint">${UI.drillMode==='methods' ? 'Each circle is a function or method; the dashed ring is its class (or, for plain functions, its file). Arrows read “calls”: <b style="color:var(--acc)">blue</b> across rings, dotted within one. Calls are matched by name, the file’s imports and the receiver’s declared type, so treat them as a very good guess, not a compiler.' : UI.drillMode==='classes'
      ? 'Each circle is a class / interface / type. <b style="color:var(--acc)">Solid arrow + hollow head</b> = extends, <b style="color:var(--acc)">dashed</b> = implements, <span>thin grey</span> = uses (mentions the type in its body). Dashed circles belong to other components.'
      : 'File-level view: circles are files (size ∝ bytes), arrows are imports. Dashed circles are other components these files touch.'}</div>
    <div style="margin:10px 0"><button class="btn sm" id="backBtn">← Back to architecture</button></div><div class="hint">Click a ${UI.drillMode==='classes'?'class':UI.drillMode==='methods'?'method':'file'} for details.</div>`;
@@ -303,17 +303,20 @@ function drawerDrillHead(c){
 /* ---------------- classes ---------------- */
 const KIND_COLOR = {interface:'var(--api)',trait:'var(--api)',annotation:'var(--api)',enum:'var(--data)',struct:'var(--client)',record:'var(--client)',module:'var(--shared)',object:'var(--shared)'};
 let CDEG=null;
-function classDeg(){ if(CDEG&&CDEG.A===A) return CDEG.d; const d=new Map(); (A.classEdges||[]).forEach(([a,b])=>{ d.set(a,(d.get(a)||0)+1); d.set(b,(d.get(b)||0)+1); }); CDEG={A,d}; return d; }
-function topClasses(cid,n){ const d=classDeg(); return A.classes.filter(k=>k.comp===cid).sort((a,b)=>(d.get(b.id)||0)-(d.get(a.id)||0)||b.methods.length-a.methods.length).slice(0,n); }
-function fileClasses(fid){ return (A.classes||[]).filter(k=>k.file===fid); }
+function classDeg(){ if(CDEG&&CDEG.A===A) return CDEG.d; const d=new Map(); (A.classEdges||[]).forEach(([a,b])=>{ if(A.classes[a].fn||A.classes[b].fn) return; d.set(a,(d.get(a)||0)+1); d.set(b,(d.get(b)||0)+1); }); CDEG={A,d}; return d; }
+function topClasses(cid,n){ const d=classDeg(); return A.classes.filter(k=>k.comp===cid&&!k.fn).sort((a,b)=>(d.get(b.id)||0)-(d.get(a.id)||0)||b.methods.length-a.methods.length).slice(0,n); }
+function fileClasses(fid){ return (A.classes||[]).filter(k=>k.file===fid&&!k.fn); }
+function fileFns(fid){ return (A.classes||[]).find(k=>k.fn&&k.file===fid); }
+const fnList = fid => { const m=fileFns(fid); return m? `<h5>Functions (${m.methods.length})</h5><div>${m.methods.map((n,i)=>`<a class="tag mono link" data-method="${m.id}.${i}">${esc(n)}${(D.mOut.has(m.id+'.'+i)||D.mIn.has(m.id+'.'+i))?' ⇄':''}</a>`).join('')}</div>` : ''; };
 const EDGE_VERB = ['uses','extends','implements'], EDGE_KIND = ['uses','extends','implements'];
 function drawClasses(cid, force){
   const c=A.comps[cid]; const d=classDeg();
-  let mine = A.classes.filter(k=>k.comp===cid).sort((a,b)=>(d.get(b.id)||0)-(d.get(a.id)||0)||b.methods.length-a.methods.length);
+  let mine = A.classes.filter(k=>k.comp===cid&&!k.fn).sort((a,b)=>(d.get(b.id)||0)-(d.get(a.id)||0)||b.methods.length-a.methods.length);
   let top = mine.slice(0,80); if (force!=null && A.classes[force].comp===cid && !top.some(k=>k.id===force)) top.push(A.classes[force]);
   const keep = new Set(top.map(k=>k.id)); const ghosts = new Map(); const edges=[]; const seen=new Set();
   const ce = (A.classEdges||[]).slice().sort((a,b)=>b[2]-a[2]);
   for (const [a,b,t] of ce) {
+    if (A.classes[a].fn||A.classes[b].fn) continue;
     const ina=keep.has(a), inb=keep.has(b);
     if (ina&&inb) { edges.push({s:'k'+a,t:'k'+b,w:1,kind:EDGE_KIND[t],title:`${A.classes[a].name} ${EDGE_VERB[t]} ${A.classes[b].name}`}); }
     else if (ina && A.classes[b].comp!==cid) { if(ghosts.size<30||ghosts.has(b)||b===force){ ghosts.set(b,1); edges.push({s:'k'+a,t:'k'+b,w:1,kind:EDGE_KIND[t],title:`${A.classes[a].name} ${EDGE_VERB[t]} ${A.classes[b].name}`}); } }
@@ -355,7 +358,7 @@ function drawerClass(k){
 /* ---------------- methods ---------------- */
 const hasCalls = cid => { for (const k of D.mOut.keys()) if (+k.split('.')[0]===cid) return true; for (const k of D.mIn.keys()) if (+k.split('.')[0]===cid) return true; return false; };
 const clsHue = id => `hsl(${(id*47+20)%360} 62% 52%)`;
-const mname = (c,m) => `${A.classes[c].name}.${A.classes[c].methods[m]}`;
+const mname = (c,m) => A.classes[c].fn ? `${A.classes[c].name}::${A.classes[c].methods[m]}` : `${A.classes[c].name}.${A.classes[c].methods[m]}`;
 function drawMethods(cid, focusCls, focusKey){
   const calls = A.calls||[]; const deg = new Map(); calls.forEach(([a,b,c,d])=>{ const x=a+'.'+b, y=c+'.'+d; deg.set(x,(deg.get(x)||0)+1); deg.set(y,(deg.get(y)||0)+1); });
   let sel; const mine = new Set(), ghost = new Set(), E = [];
@@ -390,12 +393,12 @@ function drawerMethod(k,m){
   const key=k.id+'.'+m, out=D.mOut.get(key)||[], inc=D.mIn.get(key)||[]; const f=A.files[k.file]; const comp=A.comps[k.comp];
   const list=(arr,empty)=>arr.length?`<ul class="clean">${arr.slice(0,40).map(([c,mm])=>`<li><a class="link" data-method="${c}.${mm}">${esc(mname(c,mm))}</a>${c===k.id?'<span class="w">same class</span>':`<span class="w">${esc(short(A.comps[A.classes[c].comp]?A.comps[A.classes[c].comp].label:'',20))}</span>`}</li>`).join('')}${arr.length>40?`<li class="hint">+${arr.length-40} more</li>`:''}</ul>`:`<div class="hint">${empty}</div>`;
   $('#drawer').innerHTML=`<h4>${esc(k.methods[m])}()</h4>
-   <div style="margin:6px 0 8px"><span class="pill"><i style="background:${clsHue(k.id)}"></i>method of <a class="link" data-class="${k.id}">${esc(k.name)}</a></span> ${comp?`<a class="link" data-comp="${comp.id}" style="font-size:12.5px">${esc(comp.label)}</a>`:''}</div>
+   <div style="margin:6px 0 8px"><span class="pill"><i style="background:${clsHue(k.id)}"></i>${k.fn?'function in '+esc(k.name):'method of <a class="link" data-class="'+k.id+'">'+esc(k.name)+'</a>'}</span> ${comp?`<a class="link" data-comp="${comp.id}" style="font-size:12.5px">${esc(comp.label)}</a>`:''}</div>
    <div class="mono hint" style="word-break:break-all"><a href="${ghBlob(f.path)}#L${(k.mlines&&k.mlines[m])||k.line}" target="_blank" rel="noopener">${esc(f.path)}:${(k.mlines&&k.mlines[m])||k.line}</a></div>
-   <div style="margin:10px 0"><button class="btn sm" id="mAll">Show all ${esc(k.name)} calls</button></div>
+   <div style="margin:10px 0"><button class="btn sm" id="mAll">Show all ${k.fn?'functions in '+esc(k.name):esc(k.name)+' calls'}</button></div>
    <h5>Calls (${out.length})</h5>${list(out,'Makes no calls to other known methods.')}
    <h5>Called by (${inc.length})</h5>${list(inc,'No known callers in the scanned code.')}
-   <div class="hint" style="margin-top:14px">Calls are resolved from the receiver’s declared type or a unique method name; dynamic dispatch, reflection and lambdas can be missed.</div>`;
+   <div class="hint" style="margin-top:14px">Calls are resolved from the receiver’s declared type, the file’s imports, or a unique name; dynamic dispatch, callbacks and reflection can be missed.</div>`;
   wireDrawer(); $('#mAll').onclick=()=>{ UI.drillMode='methods'; drawMethods(k.comp,k.id); };
 }
 function drawerSvc(s){
@@ -420,6 +423,7 @@ function drawerFile(f){
    ${f.routes.length?`<h5>Routes</h5>${f.routes.slice(0,10).map(r=>`<div><span class="method m-${r.method}">${r.method}</span> <span class="mono">${esc(r.path)}</span></div>`).join('')}`:''}
    ${f.models.length?`<h5>Models</h5>${f.models.map(m=>`<span class="tag fw">${esc(m.name)}</span>`).join('')}`:''}
    ${fileClasses(f.id).length?`<h5>Classes in this file</h5>${fileClasses(f.id).map(k=>`<div><a class="link" data-class="${k.id}">${esc(k.name)}</a> <span class="pill">${esc(k.kind)}</span></div>`).join('')}`:''}
+   ${fnList(f.id)}
    <h5>Imports (${imp.length})</h5><ul class="clean">${imp.slice(0,30).map(x=>`<li class="mono" style="font-size:11.5px">${esc(x.path)}</li>`).join('')||'<li class="hint">none resolved in repo</li>'}</ul>
    <h5>Imported by (${by.length})</h5><ul class="clean">${by.slice(0,30).map(x=>`<li class="mono" style="font-size:11.5px">${esc(x.path)}</li>`).join('')||'<li class="hint">no one (in scanned files)</li>'}</ul>
    ${f.externals.length?`<h5>External packages</h5>${f.externals.map(x=>`<span class="tag">${esc(x)}</span>`).join('')}`:''}`;
@@ -483,7 +487,7 @@ function renderOverview(){
     <div class="stat"><b>${fmt(s.totalFiles)}</b><span>files in repo</span></div><div class="stat"><b>${fmt(s.sourceFiles)}</b><span>source files</span></div>
     <div class="stat"><b>${A.comps.length}</b><span>components</span></div><div class="stat"><b>${D.edges.length}</b><span>component links</span></div>
     <div class="stat"><b>${A.services.length}</b><span>external systems</span></div><div class="stat"><b>${A.routes.filter(x=>x.method!=='PAGE').length}</b><span>endpoints</span></div>
-    <div class="stat"><b>${A.models.length}</b><span>data models</span></div><div class="stat"><b>${A.entries.length}</b><span>entry points</span></div>${(A.classes||[]).length?`<div class="stat"><b>${fmt(A.classes.length)}</b><span>classes & types</span></div><div class="stat"><b>${(A.classEdges||[]).filter(e=>e[2]>0).length}</b><span>inheritance links</span></div>${(A.calls||[]).length?`<div class="stat"><b>${fmt(A.calls.length)}</b><span>method calls</span></div>`:''}`:''}</div>
+    <div class="stat"><b>${A.models.length}</b><span>data models</span></div><div class="stat"><b>${A.entries.length}</b><span>entry points</span></div>${(A.classes||[]).some(k=>!k.fn)?`<div class="stat"><b>${fmt(A.classes.filter(k=>!k.fn).length)}</b><span>classes & types</span></div><div class="stat"><b>${(A.classEdges||[]).filter(e=>e[2]>0).length}</b><span>inheritance links</span></div>${(A.calls||[]).length?`<div class="stat"><b>${fmt(A.calls.length)}</b><span>function & method calls</span></div>`:''}`:''}${(A.classes||[]).some(k=>k.fn)&&!(A.classes||[]).some(k=>!k.fn)?`<div class="stat"><b>${fmt(A.classes.reduce((a,k)=>a+k.methods.length,0))}</b><span>functions</span></div><div class="stat"><b>${fmt((A.calls||[]).length)}</b><span>function calls</span></div>`:''}</div>
    <div class="two" style="margin-top:6px">
     <div><h3>Languages</h3><div class="box"><div class="bar" style="height:12px">${L.slice(0,10).map((l,i)=>`<i style="width:${l.bytes/tot*100}%;background:hsl(${(i*57+200)%360} 65% 60%)" title="${l.name}"></i>`).join('')}</div>
      <div class="legend">${L.slice(0,10).map((l,i)=>`<span><i style="background:hsl(${(i*57+200)%360} 65% 60%)"></i>${l.name} ${Math.round(l.bytes/tot*100)}% · ${l.files} files</span>`).join('')}</div></div>
@@ -500,14 +504,14 @@ function renderArch(){
   if (!A.comps.length) { $('#panel').innerHTML='<div class="wrap"><div class="callout">No source code components were found in this repo (it may be docs, config or assets only).</div></div>'; return; }
   $('#panel').innerHTML = `<div class="archwrap"><div class="canvas"><svg id="g1"></svg>
     <div class="toolbar"><div class="grp"><button data-l="layered" class="${UI.layout==='layered'?'on':''}">Layers</button><button data-l="force" class="${UI.layout==='force'?'on':''}">Network</button></div>
-     <label><input type="checkbox" id="extChk" ${UI.showExt?'checked':''}> External systems</label><button class="btn sm" id="fitBtn">Fit</button><input type="search" id="findIn" placeholder="Find component or class…" list="complist"><datalist id="complist">${A.comps.map(c=>`<option value="${esc(c.label)}">`).join('')}${(A.classes||[]).slice(0,4000).map(k=>`<option value="${esc(k.name)}">`).join('')}</datalist></div>
+     <label><input type="checkbox" id="extChk" ${UI.showExt?'checked':''}> External systems</label><button class="btn sm" id="fitBtn">Fit</button><input type="search" id="findIn" placeholder="Find component or class…" list="complist"><datalist id="complist">${A.comps.map(c=>`<option value="${esc(c.label)}">`).join('')}${(A.classes||[]).filter(k=>!k.fn).slice(0,4000).map(k=>`<option value="${esc(k.name)}">`).join('')}</datalist></div>
     <div class="keybox"><div class="row"><span><i class="ln" style="border-color:var(--out)"></i>depends on</span><span><i class="ln" style="border-color:var(--in)"></i>used by</span><span><i class="ln" style="border-color:var(--warn);border-top-style:dashed"></i>against layer flow</span><span>⚡ entry · ↻ cycle</span></div></div></div>
     <aside class="drawer" id="drawer"></aside></div>`;
   GRAPH = GraphView($('#g1'),{node:selectNode, edge:drawerEdge, background:()=>{ UI.sel=null; GRAPH.select(null); if(UI.drill==null) drawerHome(); }});
   document.querySelectorAll('.toolbar [data-l]').forEach(b=>b.onclick=()=>{ UI.layout=b.dataset.l; UI.drill=null; document.querySelectorAll('.toolbar [data-l]').forEach(x=>x.classList.toggle('on',x===b)); drawArch(); });
   $('#extChk').onchange=e=>{ UI.showExt=e.target.checked; drawArch(); };
   $('#fitBtn').onclick=()=>GRAPH.fit();
-  $('#findIn').onchange=e=>{ const v=e.target.value, lv=v.toLowerCase(); const c=A.comps.find(c=>c.label===v); if(c) return selectComp(c.id); const k=(A.classes||[]).find(k=>k.name===v)||(A.classes||[]).find(k=>k.name.toLowerCase()===lv); if(k) return focusClass(k.id); const c2=A.comps.find(c=>c.label.toLowerCase().includes(lv)); if(c2) return selectComp(c2.id); const k2=(A.classes||[]).find(k=>k.name.toLowerCase().includes(lv)); if(k2) focusClass(k2.id); };
+  $('#findIn').onchange=e=>{ const v=e.target.value, lv=v.toLowerCase(); const c=A.comps.find(c=>c.label===v); if(c) return selectComp(c.id); const k=(A.classes||[]).find(k=>!k.fn&&k.name===v)||(A.classes||[]).find(k=>!k.fn&&k.name.toLowerCase()===lv); if(k) return focusClass(k.id); const c2=A.comps.find(c=>c.label.toLowerCase().includes(lv)); if(c2) return selectComp(c2.id); const k2=(A.classes||[]).find(k=>!k.fn&&k.name.toLowerCase().includes(lv)); if(k2) focusClass(k2.id); };
   UI.drill=null; drawArch(); if (UI.sel && UI.sel[0]==='c') drawerComp(A.comps[+UI.sel.slice(1)]); else drawerHome();
   const qp=new URLSearchParams(location.search); if (qp.has('sel') && !renderArch.done) { renderArch.done=true; const c=A.comps.find(c=>c.label.includes(qp.get('sel'))); if(c){ selectComp(c.id); if(qp.has('drill')){ UI.drill=c.id; UI.drillMode=qp.get('drill')==='classes'?'classes':'files'; UI.drillMode==='classes'?drawClasses(c.id):drawDrill(c.id); drawerDrillHead(c);} if(qp.get('drill')==='methods'){ UI.drillMode='methods'; drawMethods(c.id); drawerDrillHead(c); } if(qp.has('class')){ const k=A.classes.find(k=>k.name===qp.get('class')); if(k) focusClass(k.id); } } }
 }
@@ -628,11 +632,13 @@ function fileDetail(f){
    ${fileClasses(f.id).length?`<h3>Classes & types</h3>${fileClasses(f.id).map(k=>`<div><a class="link" data-class="${k.id}">${esc(k.name)}</a> <span class="pill">${esc(k.kind)}</span> <span class="hint">${k.methods.length?k.methods.slice(0,6).join(', ')+(k.methods.length>6?'…':''):''}</span></div>`).join('')}`:''}
    ${f.routes.length?`<h3>Routes</h3>${f.routes.map(r=>`<div><span class="method m-${r.method}">${r.method}</span> <span class="mono">${esc(r.path)}</span></div>`).join('')}`:''}
    ${f.models.length?`<h3>Models</h3>${f.models.map(m=>`<span class="tag fw">${esc(m.name)}</span>`).join('')}`:''}
+   ${fileFns(f.id)?`<h3>Functions <small>${fileFns(f.id).methods.length}</small></h3><div>${fileFns(f.id).methods.map((n,i)=>{ const key=fileFns(f.id).id+'.'+i; return `<a class="tag mono link" data-method="${key}">${esc(n)}${(D.mOut.has(key)||D.mIn.has(key))?' ⇄':''}</a>`; }).join('')}</div>`:''}
    <div class="two"><div><h3>Imports <small>${imp.length}</small></h3><ul class="clean">${imp.map(x=>`<li class="mono link" data-p="${esc(x.path)}">${esc(x.path)}</li>`).join('')||'<li class="hint">none inside the repo</li>'}</ul></div>
    <div><h3>Imported by <small>${by.length}</small></h3><ul class="clean">${by.slice(0,60).map(x=>`<li class="mono link" data-p="${esc(x.path)}">${esc(x.path)}</li>`).join('')||'<li class="hint">no one in scanned files</li>'}</ul></div></div>
    ${f.externals.length?`<h3>External packages</h3>${f.externals.map(x=>`<span class="tag">${esc(x)}</span>`).join('')}`:''}`;
   if (c) $('#toComp').onclick=()=>{ showTab('arch'); setTimeout(()=>selectComp(c.id),50); };
   document.querySelectorAll('#fdetail [data-class]').forEach(a=>a.onclick=()=>focusClass(+a.dataset.class));
+  document.querySelectorAll('#fdetail [data-method]').forEach(a=>a.onclick=()=>{ const [c,m]=a.dataset.method.split('.').map(Number); focusMethod(c,m); });
   document.querySelectorAll('#fdetail [data-p]').forEach(a=>a.onclick=()=>{ const t=A.files.find(x=>x.path===a.dataset.p); if(t) fileDetail(t); });
 }
 
