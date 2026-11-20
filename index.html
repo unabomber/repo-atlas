@@ -144,11 +144,11 @@ dialog input{width:100%;background:var(--card);border:1px solid var(--line);bord
    ============================================================ */
 const LANG = {js:'JavaScript',jsx:'JavaScript',mjs:'JavaScript',cjs:'JavaScript',ts:'TypeScript',tsx:'TypeScript',mts:'TypeScript',cts:'TypeScript',
   vue:'Vue',svelte:'Svelte',astro:'Astro',py:'Python',go:'Go',rs:'Rust',java:'Java',kt:'Kotlin',kts:'Kotlin',scala:'Scala',rb:'Ruby',php:'PHP',
-  cs:'C#',fs:'F#',swift:'Swift',dart:'Dart',ex:'Elixir',exs:'Elixir',erl:'Erlang',clj:'Clojure',lua:'Lua',c:'C',h:'C',cc:'C++',cpp:'C++',cxx:'C++',hpp:'C++',
+  cs:'C#',vb:'Visual Basic',fs:'F#',swift:'Swift',dart:'Dart',ex:'Elixir',exs:'Elixir',erl:'Erlang',clj:'Clojure',lua:'Lua',c:'C',h:'C',cc:'C++',cpp:'C++',cxx:'C++',hpp:'C++',
   m:'Objective-C',mm:'Objective-C',sql:'SQL',proto:'Protobuf',graphql:'GraphQL',gql:'GraphQL',prisma:'Prisma',tf:'Terraform',html:'HTML',htm:'HTML',
   css:'CSS',scss:'CSS',sass:'CSS',less:'CSS'};
 const SOURCE_EXT = new Set(Object.keys(LANG));
-const SCAN_EXT = new Set('js jsx mjs cjs ts tsx mts cts vue svelte astro py go rs java kt kts scala rb php cs dart c h cc cpp cxx hpp sql prisma'.split(' '));
+const SCAN_EXT = new Set('js jsx mjs cjs ts tsx mts cts vue svelte astro py go rs java kt kts scala rb php cs vb dart c h cc cpp cxx hpp sql prisma'.split(' '));
 const ASSET_EXT = new Set('png jpg jpeg gif svg ico webp avif woff woff2 ttf eot otf mp4 mp3 wav pdf zip gz tar tgz jar class exe dll so dylib bin wasm lock map snap psd ai sketch bmp'.split(' '));
 const DOC_EXT = new Set(['md','rst','txt','adoc','mdx']);
 const CONF_EXT = new Set(['json','yml','yaml','toml','ini','cfg','env','xml','properties','conf','gradle','csproj']);
@@ -189,7 +189,7 @@ const TECH_RAW = [
  ['org\\.springframework.*|spring-boot.*|spring-.*','Spring','framework'],['io\\.quarkus.*|quarkus-.*','Quarkus','framework'],['io\\.micronaut.*','Micronaut','framework'],
  ['github\\.com/gin-gonic/gin','Gin','framework'],['github\\.com/labstack/echo.*','Echo','framework'],['github\\.com/gofiber/fiber.*','Fiber','framework'],['github\\.com/go-chi/chi.*','chi','framework'],['github\\.com/gorilla/mux','gorilla/mux','framework'],
  ['actix-web|actix-rt','Actix','framework'],['axum','Axum','framework'],['rocket','Rocket','framework'],['warp','Warp','framework'],['tokio','Tokio','framework'],
- ['microsoft\\.aspnetcore.*|microsoft\\.asp.*','ASP.NET','framework'],['electron','Electron','framework'],['@tauri-apps/.*|tauri','Tauri','framework'],['react-native|expo','React Native','frontend'],
+ ['microsoft\\.aspnetcore.*|microsoft\\.asp.*|system\\.web.*','ASP.NET','framework'],['system\\.data\\.sqlclient.*|microsoft\\.data\\.sqlclient.*|dapper|system\\.data\\.(odbc|oledb).*','SQL Server / ADO.NET','database'],['system\\.servicemodel.*','WCF services','api'],['system\\.windows\\.forms.*','Windows Forms','frontend'],['system\\.net\\.(http|sockets|mail).*','Network I/O','http'],['system\\.messaging.*','MSMQ','queue'],['electron','Electron','framework'],['@tauri-apps/.*|tauri','Tauri','framework'],['react-native|expo','React Native','frontend'],
  // frontend
  ['react|react-dom','React','frontend'],['vue','Vue','frontend'],['svelte','Svelte','frontend'],['@angular/core','Angular','frontend'],['solid-js','Solid','frontend'],['preact','Preact','frontend'],['lit|lit-element','Lit','frontend'],
  ['jquery','jQuery','frontend'],['htmx\\.org','htmx','frontend'],['alpinejs','Alpine.js','frontend'],['tailwindcss','Tailwind CSS','ui'],['bootstrap','Bootstrap','ui'],['@mui/.*','MUI','ui'],['@chakra-ui/.*','Chakra UI','ui'],['antd','Ant Design','ui'],['@radix-ui/.*','Radix UI','ui'],
@@ -332,7 +332,7 @@ function parseManifest(path, text){
       const y=parseYaml(text); out.eco='pub'; out.name=y.name||null; out.deps=Object.keys(y.dependencies||{});
     } else if (b==='mix.exs') {
       out.eco='hex'; out.deps=[...text.matchAll(/\{:(\w+),/g)].map(m=>m[1]);
-    } else if (b.endsWith('.csproj')) {
+    } else if (/\.(cs|vb)proj$/.test(b)) {
       out.eco='nuget'; out.deps=[...text.matchAll(/PackageReference\s+Include="([^"]+)"/g)].map(m=>m[1]);
     }
   } catch(e){}
@@ -413,6 +413,11 @@ function extractFile(f, text){
     r.ns = (text.match(/^\s*namespace\s+([\w.]+)/m)||[])[1];
     for (const m of text.matchAll(/\[Http(Get|Post|Put|Patch|Delete)(?:\(\s*"([^"]*)")?/g)) r.routes.push({method:m[1].toUpperCase(),path:'/'+(m[2]||'').replace(/^\//,'')});
     if (/static\s+(async\s+)?(void|Task)\s+Main\s*\(|WebApplication\.CreateBuilder/.test(text)) r.entry='server';
+  } else if (lang==='Visual Basic') {
+    for (const m of text.matchAll(/^\s*Imports\s+(?:\w+\s*=\s*)?([\w.]+)/gim)) r.imports.push(m[1]);
+    r.ns = (text.match(/^\s*Namespace\s+([\w.]+)/im)||[])[1];
+    if (/\bSub\s+Main\s*\(/i.test(text)) r.entry='cli';
+    for (const m of text.matchAll(/Environment\.GetEnvironmentVariable\(\s*"([A-Z][A-Z0-9_]{2,})"/g)) r.env.push(m[1]);
   } else if (['C','C++','Objective-C'].includes(lang)) {
     for (const m of text.matchAll(/^\s*#\s*include\s+"([^"]+)"/gm)) r.imports.push(m[1]);
     if (/^\s*int\s+main\s*\(/m.test(text)) r.entry='cli';
@@ -558,7 +563,7 @@ async function analyzeRepo(input, opts = {}, onProgress = ()=>{}){
   const srcFiles = files.filter(f=>f.kind==='source');
 
   /* manifests & infra files */
-  const manifestFiles = files.filter(f=>(MANIFESTS.has(base(f.path))||/^requirements.*\.txt$/.test(base(f.path))||f.path.endsWith('.csproj')) && !['ignored','test','aux'].includes(f.kind));
+  const manifestFiles = files.filter(f=>(MANIFESTS.has(base(f.path))||/^requirements.*\.txt$/.test(base(f.path))||/\.(cs|vb)proj$/.test(f.path)) && !['ignored','test','aux'].includes(f.kind));
   const composeFiles = files.filter(f=>/(^|\/)(docker-)?compose[\w.\-]*\.ya?ml$/.test(f.path) && f.kind!=='ignored').slice(0,4);
   const dockerFiles = files.filter(f=>/(^|\/)Dockerfile[\w.\-]*$/.test(f.path) && f.kind!=='ignored').slice(0,15);
   const wfFiles = files.filter(f=>/^\.github\/workflows\/[^\/]+\.ya?ml$/.test(f.path)).slice(0,20);
@@ -578,7 +583,7 @@ async function analyzeRepo(input, opts = {}, onProgress = ()=>{}){
     if (m.eco==='npm' && m.name) workspacePkgs.set(m.name,d);
     if (m.eco==='cargo' && m.name) cargoPkgs.set(m.name.replace(/-/g,'_'),d); }
   goMods.sort((a,b)=>b.module.length-a.module.length);
-  const manifestDirSet = new Set(manifestFiles.filter(f=>COMPONENT_MANIFESTS.has(base(f.path))||f.path.endsWith('.csproj')).map(f=>dirOf(f.path)).filter(d=>d!==''));
+  const manifestDirSet = new Set(manifestFiles.filter(f=>COMPONENT_MANIFESTS.has(base(f.path))||/\.(cs|vb)proj$/.test(f.path)).map(f=>dirOf(f.path)).filter(d=>d!==''));
   const srcDirs = new Set(srcFiles.map(f=>dirOf(f.path)));
   const manifestDirs = [...manifestDirSet].filter(d=>[...srcDirs].some(s=>s===d||s.startsWith(d+'/')));
 
@@ -629,7 +634,7 @@ async function analyzeRepo(input, opts = {}, onProgress = ()=>{}){
   for (const [id,r] of raw) { const f=files[id];
     if (r.pkg && ['Java','Kotlin','Scala'].includes(f.lang)) jvmIdx.set(r.pkg+'.'+base(f.path).replace(/\.\w+$/,''), f);
     if (r.pkg && ['Java','Kotlin','Scala'].includes(f.lang)) { if(!nsIdx.has(r.pkg)) nsIdx.set(r.pkg,[]); nsIdx.get(r.pkg).push(f); }
-    if (r.ns && f.lang==='C#') { if(!nsIdx.has(r.ns)) nsIdx.set(r.ns,[]); nsIdx.get(r.ns).push(f); }
+    if (r.ns && (f.lang==='C#'||f.lang==='Visual Basic')) { if(!nsIdx.has(r.ns)) nsIdx.set(r.ns,[]); nsIdx.get(r.ns).push(f); }
     if (r.pkg && f.lang==='PHP') jvmIdx.set(r.pkg+'\\'+base(f.path).replace(/\.\w+$/,''), f);
   }
   const rep = dir => { let list = dirIndex.get(dir); if(!list||!list.length){ const k=dirKeys.find(d=>d.startsWith(dir+'/')); list=k!==undefined?dirIndex.get(k):[]; } if(!list.length) return null;
@@ -698,7 +703,7 @@ async function analyzeRepo(input, opts = {}, onProgress = ()=>{}){
       for (let k=0;k<3;k++) { const t=jvmIdx.get(name); if (t) { L.internal.push(t); return L; } const i=name.lastIndexOf('.'); if(i<0)break; name=name.slice(0,i); }
       L.ext = spec.split('.').slice(0,3).join('.'); return L;
     }
-    if (lang==='C#') { if (spec.startsWith('System')) return L; const list=nsIdx.get(spec); if (list&&list[0]) { L.internal.push(list[0]); return L; } if (/^Microsoft\./.test(spec)) L.ext=spec.toLowerCase().split('.').slice(0,3).join('.'); else if(!spec.includes('.')||true) { const topNs=spec.split('.')[0]; if (![...nsIdx.keys()].some(k=>k.split('.')[0]===topNs)) L.ext=spec.toLowerCase().split('.').slice(0,2).join('.'); } return L; }
+    if (lang==='C#' || lang==='Visual Basic') { if (spec.startsWith('System') && !/^System\.(Data\.(SqlClient|OleDb|Odbc)|ServiceModel|Web|Net\.(Http|Sockets|Mail)|Messaging|Management|ServiceProcess|Windows\.Forms)/i.test(spec)) return L; const list=nsIdx.get(spec); if (list&&list[0]) { L.internal.push(list[0]); return L; } const topNs=spec.split('.')[0]; if (![...nsIdx.keys()].some(k=>k.split('.')[0].toLowerCase()===topNs.toLowerCase())) L.ext=spec.toLowerCase().split('.').slice(0,/^system$/i.test(topNs)?3:2).join('.'); return L; }
     if (lang==='PHP') { const t=jvmIdx.get(spec); if (t) { L.internal.push(t); return L; } const top=spec.split('\\')[0]; if (![...jvmIdx.keys()].some(k=>k.split('\\')[0]===top)) L.ext = top.toLowerCase()==='illuminate'? 'illuminate' : spec.split('\\').slice(0,2).join('\\').toLowerCase(); return L; }
     if (lang==='Ruby') { if (spec.rel!==undefined) { const t=normPath(dirOf(f.path)+'/'+spec.rel); for (const c of [t+'.rb',t]) if (pathSet.has(c)) { L.internal.push(byPath.get(c)); break; } } else if (spec.gem) { if (!['json','set','yaml','time','date','net/http','uri','fileutils','securerandom','digest','erb','logger','optparse','open3','tempfile','forwardable','singleton','ostruct','benchmark','bigdecimal','csv','zlib','stringio','pathname','socket','timeout','monitor','pp','English','rbconfig'].includes(spec.gem) && !spec.gem.startsWith('active')&&true) { const first=spec.gem.split('/')[0]; if(![...dirIndex.keys()].some(d=>d.split('/').includes(first))) L.ext = spec.gem.split('/')[0]; } } return L; }
     if (['C','C++','Objective-C'].includes(lang)) { const rel = normPath(dirOf(f.path)+'/'+spec); if (pathSet.has(rel)) L.internal.push(byPath.get(rel)); else { const hit = files.find(x=>x.path.endsWith('/'+spec)||x.path===spec); if (hit) L.internal.push(hit); } return L; }

@@ -2,7 +2,7 @@ const fs=require('fs');
 const src=fs.readFileSync(__dirname+'/analyzer.js','utf8');
 const {analyzeRepo}=new Function(src+'\nreturn {analyzeRepo};')();
 (async()=>{
-  const A=await analyzeRepo(process.argv[2],{budget:+process.argv[3]||400},()=>{});
+  const A=await analyzeRepo(process.argv[2],{budget:+process.argv[3]||400,token:process.env.GH_TOKEN},()=>{});
   const s=A.stats; console.log(`files ${s.totalFiles} src ${s.sourceFiles} scanned ${s.scanned}`, s.languages.slice(0,4).map(l=>l.name+l.files).join(' '));
   console.log('COMPS'); A.comps.forEach(c=>console.log(' ',c.label.padEnd(34),c.role+(c.roleGuessed?'?':''),'f'+c.files.length,'in'+c.fanIn,'out'+c.fanOut,'ep'+c.endpoints,'['+c.tags.map(t=>t.label).join(',')+']'));
   console.log('EDGES'); A.edges.sort((a,b)=>b.w-a.w).slice(0,15).forEach(e=>console.log(' ',A.comps[e.s].label,'->',A.comps[e.t].label,e.w));
