@@ -1,0 +1,1470 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Repo Atlas — see how any GitHub repo is built</title>
+<style>
+:root{--bg:#0a0e16;--panel:#111827;--card:#161f31;--card2:#1b2539;--line:#27324b;--text:#e7ecf6;--mute:#8f9bb8;--acc:#6ea8ff;--out:#6ea8ff;--in:#ffb454;--warn:#ff6b6b;--ok:#4ade80;--edge:#52607f;--shadow:0 8px 30px rgba(0,0,0,.35);
+ --client:#38bdf8;--api:#a78bfa;--cli:#c084fc;--worker:#fb923c;--core:#34d399;--data:#fbbf24;--shared:#94a3b8;--infra:#64748b;--ext:#f472b6}
+:root[data-theme=light]{--bg:#f4f6fb;--panel:#fff;--card:#fff;--card2:#f1f4fa;--line:#d9e0ee;--text:#18223a;--mute:#5d6b8c;--acc:#2f6fed;--out:#2f6fed;--in:#d97706;--warn:#dc2626;--ok:#16a34a;--edge:#9aa7c4;--shadow:0 8px 24px rgba(30,45,90,.12)}
+@media (prefers-color-scheme:light){:root:not([data-theme=dark]){--bg:#f4f6fb;--panel:#fff;--card:#fff;--card2:#f1f4fa;--line:#d9e0ee;--text:#18223a;--mute:#5d6b8c;--acc:#2f6fed;--out:#2f6fed;--in:#d97706;--warn:#dc2626;--ok:#16a34a;--edge:#9aa7c4;--shadow:0 8px 24px rgba(30,45,90,.12)}}
+*{box-sizing:border-box}html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--text);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;display:flex;flex-direction:column}
+a{color:var(--acc);text-decoration:none}a:hover{text-decoration:underline}
+button,input,select{font:inherit;color:inherit}
+header.top{display:flex;gap:14px;align-items:center;padding:10px 18px;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
+.logo{font-weight:800;letter-spacing:-.02em;font-size:17px;display:flex;align-items:center;gap:8px;white-space:nowrap}
+.logo i{width:22px;height:22px;border-radius:7px;background:conic-gradient(from 200deg,var(--client),var(--api),var(--ext),var(--worker),var(--core),var(--client));display:inline-block}
+form.go{display:flex;gap:8px;flex:1;min-width:300px;max-width:760px}
+form.go input[type=text]{flex:1;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:9px 12px;outline:none}
+form.go input[type=text]:focus{border-color:var(--acc);box-shadow:0 0 0 3px color-mix(in srgb,var(--acc) 25%,transparent)}
+.btn{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 12px;cursor:pointer;white-space:nowrap}
+.btn:hover{border-color:var(--acc)}
+.btn.pri{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600}
+.btn.sm{padding:4px 9px;border-radius:8px;font-size:12.5px}
+select.btn{padding:7px 8px}
+.spacer{flex:1}
+#progress{height:3px;background:transparent}#progress i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--client),var(--api),var(--ext));transition:width .2s}
+main{flex:1;min-height:0;display:flex;flex-direction:column}
+.landing{overflow:auto;padding:46px 22px 60px;max-width:1100px;margin:0 auto;width:100%}
+.landing h1{font-size:38px;letter-spacing:-.03em;line-height:1.1;margin:0 0 12px}
+.landing p.lead{font-size:17px;color:var(--mute);max-width:720px;margin:0 0 22px}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chip{background:var(--card);border:1px solid var(--line);border-radius:999px;padding:5px 12px;cursor:pointer;font-size:13px}
+.chip:hover{border-color:var(--acc)}
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin-top:34px}
+.feat{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px}
+.feat b{display:block;margin-bottom:4px}.feat span{color:var(--mute);font-size:13px}
+#status{padding:30px;text-align:center;color:var(--mute)}
+#status .err{color:var(--warn);max-width:640px;margin:0 auto}
+.repohead{display:flex;gap:14px;align-items:center;padding:10px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.repohead h2{margin:0;font-size:17px}.repohead .meta{color:var(--mute);font-size:12.5px;display:flex;gap:12px;flex-wrap:wrap}
+nav.tabs{display:flex;gap:2px;padding:0 12px;border-bottom:1px solid var(--line);overflow-x:auto;background:var(--panel)}
+nav.tabs button{background:none;border:0;border-bottom:2px solid transparent;padding:10px 14px;cursor:pointer;color:var(--mute);white-space:nowrap;font-weight:500}
+nav.tabs button.on{color:var(--text);border-bottom-color:var(--acc)}
+.panel{flex:1;min-height:0;overflow:auto;padding:20px}
+.panel.flush{padding:0;display:flex;overflow:hidden}
+.wrap{max-width:1180px;margin:0 auto}
+h3{margin:26px 0 10px;font-size:15px;letter-spacing:.01em}h3:first-child{margin-top:0}
+h3 small{color:var(--mute);font-weight:400;margin-left:6px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.stat b{font-size:24px;display:block;letter-spacing:-.02em}.stat span{color:var(--mute);font-size:12.5px}
+.box{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:16px}@media(max-width:900px){.two{grid-template-columns:1fr}}
+.pill{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;border-radius:999px;padding:1px 9px;border:1px solid var(--line);background:var(--card2);color:var(--text);white-space:nowrap}
+.pill i{width:8px;height:8px;border-radius:50%;display:inline-block}
+.tag{display:inline-block;font-size:11.5px;border-radius:6px;padding:1px 7px;background:var(--card2);border:1px solid var(--line);margin:2px 4px 2px 0;color:var(--mute)}
+.tag.fw{color:var(--text)}
+.bar{display:flex;height:10px;border-radius:5px;overflow:hidden;background:var(--card2)}
+.legend{display:flex;gap:12px;flex-wrap:wrap;margin-top:8px;font-size:12.5px;color:var(--mute)}.legend span{display:inline-flex;align-items:center;gap:5px}.legend i{width:9px;height:9px;border-radius:50%}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;color:var(--mute);font-weight:500;padding:6px 8px;border-bottom:1px solid var(--line);position:sticky;top:-20px;background:var(--bg)}
+td{padding:6px 8px;border-bottom:1px solid color-mix(in srgb,var(--line) 60%,transparent);vertical-align:top}
+tr:hover td{background:color-mix(in srgb,var(--card2) 60%,transparent)}
+code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px}
+.method{font-family:ui-monospace,monospace;font-size:11px;font-weight:700;padding:1px 6px;border-radius:5px;background:var(--card2);display:inline-block;min-width:44px;text-align:center}
+.m-GET{color:#4ade80}.m-POST{color:#60a5fa}.m-PUT,.m-PATCH{color:#fbbf24}.m-DELETE{color:#f87171}.m-PAGE{color:#c084fc}
+.callout{border-left:3px solid var(--acc);background:var(--card);padding:10px 14px;border-radius:0 10px 10px 0;margin:8px 0;font-size:13.5px}
+.callout.warn{border-color:var(--warn)}.callout.ok{border-color:var(--ok)}
+ul.clean{list-style:none;margin:0;padding:0}ul.clean li{padding:5px 0;border-bottom:1px solid color-mix(in srgb,var(--line) 50%,transparent)}
+.link{color:var(--acc);cursor:pointer}.link:hover{text-decoration:underline}
+/* architecture */
+.archwrap{flex:1;display:flex;min-width:0;min-height:0;position:relative}
+.canvas{flex:1;position:relative;min-width:0;background:radial-gradient(circle at 1px 1px,color-mix(in srgb,var(--line) 70%,transparent) 1px,transparent 0) 0 0/22px 22px}
+.canvas svg{width:100%;height:100%;display:block;cursor:grab;user-select:none}
+.canvas svg.pan{cursor:grabbing}
+.toolbar{position:absolute;top:10px;left:10px;right:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;pointer-events:none;z-index:3}
+.toolbar>*{pointer-events:auto}
+.toolbar .grp{display:flex;background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;box-shadow:var(--shadow)}
+.toolbar .grp button{background:none;border:0;padding:6px 11px;cursor:pointer;font-size:13px;color:var(--mute)}
+.toolbar .grp button.on{background:var(--acc);color:#fff}
+.toolbar label{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:5px 10px;font-size:13px;display:flex;gap:6px;align-items:center;box-shadow:var(--shadow);cursor:pointer}
+.toolbar input[type=search]{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px 10px;font-size:13px;box-shadow:var(--shadow);width:170px;outline:none}
+.keybox{position:absolute;left:10px;bottom:10px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-size:12px;color:var(--mute);box-shadow:var(--shadow);max-width:440px;z-index:3}
+.keybox .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}.keybox i.ln{display:inline-block;width:22px;height:0;border-top:2px solid var(--edge);vertical-align:middle;margin-right:4px}
+.drawer{width:370px;max-width:46vw;border-left:1px solid var(--line);background:var(--panel);overflow:auto;padding:16px;flex-shrink:0}
+.drawer h4{margin:0 0 4px;font-size:16px;word-break:break-all}.drawer h5{margin:16px 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute)}
+.drawer .empty{color:var(--mute);text-align:center;margin-top:80px;padding:0 20px}
+.drawer li{font-size:13px}.drawer .w{float:right;color:var(--mute);font-size:12px}
+.ex{font-size:11.5px;color:var(--mute);padding-left:12px;word-break:break-all}
+/* svg */
+.node{cursor:pointer}.node .bx{fill:var(--card);stroke-width:1.5;transition:filter .15s}
+.node:hover .bx{filter:brightness(1.25)}
+.node text{fill:var(--text);pointer-events:none}.node .t1{font-size:12.5px;font-weight:600}.node .t2{font-size:10.5px;fill:var(--mute)}
+.node.dim{opacity:.18}.node.tdn,.node.tup{opacity:.7}
+.node.sel .bx{stroke-width:3;filter:drop-shadow(0 0 8px var(--acc))}
+.edge .line{fill:none;stroke:var(--edge);opacity:.5}.edge .hit{fill:none;stroke:transparent;stroke-width:12;cursor:pointer}
+.edge.back .line{stroke:var(--warn);stroke-dasharray:5 4;opacity:.7}.edge.inf .line{stroke-dasharray:3 4}
+.edge.out .line{stroke:var(--out);opacity:1}.edge.in .line{stroke:var(--in);opacity:1}.edge.tr .line{opacity:.8}
+.edge.dim .line{opacity:.05}.edge.hov .line{opacity:1;stroke:var(--acc)}
+.colhdr{font-size:11px;fill:var(--mute);text-transform:uppercase;letter-spacing:.1em;font-weight:600}
+.lane{fill:color-mix(in srgb,var(--card2) 50%,transparent);stroke:var(--line);stroke-dasharray:2 4}
+/* flows */
+.flow{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-bottom:16px}
+.steps{display:flex;flex-direction:column;gap:0;margin-top:8px}
+.step{display:flex;gap:12px;position:relative;padding-bottom:12px}
+.step .dot{width:26px;height:26px;border-radius:50%;flex:0 0 26px;display:grid;place-items:center;font-size:12px;font-weight:700;color:#0a0e16;z-index:1}
+.step:not(:last-child)::before{content:"";position:absolute;left:12px;top:26px;bottom:0;border-left:2px dashed var(--line)}
+.step .body{flex:1;min-width:0}.step .via{font-size:11.5px;color:var(--mute)}
+.step b{cursor:pointer}.step b:hover{color:var(--acc)}
+/* files */
+.filesplit{display:flex;flex:1;min-height:0}
+.tree{width:46%;min-width:320px;overflow:auto;border-right:1px solid var(--line);padding:8px 8px 40px;font-size:13px}
+.trow{display:flex;align-items:center;gap:6px;padding:2px 6px;border-radius:6px;cursor:pointer;white-space:nowrap}
+.trow:hover{background:var(--card2)}.trow.on{background:color-mix(in srgb,var(--acc) 25%,transparent)}
+.trow .cnt{margin-left:auto;color:var(--mute);font-size:11.5px}.dotc{width:8px;height:8px;border-radius:50%;flex:0 0 8px}
+.fdetail{flex:1;overflow:auto;padding:18px}
+.fsearch{position:sticky;top:0;background:var(--bg);padding:6px 4px 8px;z-index:2}.fsearch input{width:100%;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:7px 10px;outline:none}
+textarea.out{width:100%;height:300px;background:var(--card);border:1px solid var(--line);border-radius:10px;color:var(--text);padding:12px;font:12px/1.5 ui-monospace,Menlo,monospace;resize:vertical}
+dialog{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:14px;padding:20px;max-width:460px}dialog::backdrop{background:rgba(0,0,0,.5)}
+dialog input{width:100%;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px;margin:8px 0}
+.filter{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:6px 10px;outline:none;width:260px;margin-bottom:10px}
+.hint{color:var(--mute);font-size:12.5px}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="logo"><i></i>Repo Atlas</div>
+  <form class="go" id="goform"><input type="text" id="repoInput" placeholder="owner/repo or https://github.com/owner/repo  (add @branch to pick a branch)" autocomplete="off" spellcheck="false"><select class="btn" id="depth" title="How many source files to read for import analysis"><option value="250">Quick</option><option value="600" selected>Standard</option><option value="1500">Deep</option></select><button class="btn pri" type="submit">Analyze</button></form>
+  <button class="btn" id="tokenBtn" title="GitHub token (private repos / rate limits)">⚙ Token</button>
+  <button class="btn" id="loadJson" title="Load a previously exported analysis JSON">Load JSON</button>
+  <button class="btn" id="themeBtn" title="Toggle theme">◐</button>
+</header>
+<div id="progress"><i></i></div>
+<main id="main"></main>
+<dialog id="tokenDlg"><form method="dialog"><b>GitHub token (optional)</b><p class="hint">Needed for private repos, and raises the API limit from 60 to 5,000 requests/hour. Stored only in this browser (localStorage) and sent only to api.github.com.</p><input id="tokenInput" type="password" placeholder="ghp_… or github_pat_…" autocomplete="off"><div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" value="clear">Clear</button><button class="btn pri" value="save">Save</button></div></form></dialog>
+<input type="file" id="fileIn" accept=".json" hidden>
+<script>
+//#ANALYZER-START
+/* ============================================================
+   Repo Atlas — analyzer. Pure JS, runs in browser or node 18+.
+   analyzeRepo(input, opts, onProgress) -> architecture model
+   ============================================================ */
+const LANG = {js:'JavaScript',jsx:'JavaScript',mjs:'JavaScript',cjs:'JavaScript',ts:'TypeScript',tsx:'TypeScript',mts:'TypeScript',cts:'TypeScript',
+  vue:'Vue',svelte:'Svelte',astro:'Astro',py:'Python',go:'Go',rs:'Rust',java:'Java',kt:'Kotlin',kts:'Kotlin',scala:'Scala',rb:'Ruby',php:'PHP',
+  cs:'C#',fs:'F#',swift:'Swift',dart:'Dart',ex:'Elixir',exs:'Elixir',erl:'Erlang',clj:'Clojure',lua:'Lua',c:'C',h:'C',cc:'C++',cpp:'C++',cxx:'C++',hpp:'C++',
+  m:'Objective-C',mm:'Objective-C',sql:'SQL',proto:'Protobuf',graphql:'GraphQL',gql:'GraphQL',prisma:'Prisma',tf:'Terraform',html:'HTML',htm:'HTML',
+  css:'CSS',scss:'CSS',sass:'CSS',less:'CSS'};
+const SOURCE_EXT = new Set(Object.keys(LANG));
+const SCAN_EXT = new Set('js jsx mjs cjs ts tsx mts cts vue svelte astro py go rs java kt kts scala rb php cs dart c h cc cpp cxx hpp sql prisma'.split(' '));
+const ASSET_EXT = new Set('png jpg jpeg gif svg ico webp avif woff woff2 ttf eot otf mp4 mp3 wav pdf zip gz tar tgz jar class exe dll so dylib bin wasm lock map snap psd ai sketch bmp'.split(' '));
+const DOC_EXT = new Set(['md','rst','txt','adoc','mdx']);
+const CONF_EXT = new Set(['json','yml','yaml','toml','ini','cfg','env','xml','properties','conf','gradle','csproj']);
+const IGN_RE = /(^|\/)(node_modules|vendor|dist|build|target|\.git|\.next|\.nuxt|\.svelte-kit|\.output|__pycache__|\.venv|venv|coverage|third_party|thirdparty|bower_components|\.gradle|Pods|\.idea|\.vscode|generated|__generated__|migrations?|site-packages|\.turbo|\.cache|storybook-static)(\/|$)/i;
+const TEST_RE = /(^|\/)(tests?|__tests__|spec|specs|e2e|cypress|playwright|__mocks__|__snapshots__|fixtures|testdata|testing|integration-tests?)(\/|$)|\.(test|spec|stories)\.[a-z]+$|_test\.(go|py|rb)$|(^|\/)test_[^\/]*\.py$|(^|\/)conftest\.py$|Tests?\.(java|kt|cs)$/i;
+const AUX_NAME = /^(docs?|documentation|examples?|samples?|demos?|benchmarks?|scripts?|tools|playground|website-docs|\.github|\.circleci|\.husky)$/i;
+const AUX_BLOCK = /^(src|main|java|kotlin|scala|lib|app|org|com|net|io|packages)$/i;
+function isAux(path){ const segs=path.split('/').slice(0,-1); for(let i=0;i<Math.min(segs.length,3);i++){ if(AUX_NAME.test(segs[i]) && !segs.slice(0,i).some(x=>AUX_BLOCK.test(x)&&x.toLowerCase()!=='packages')) return true; } return false; }
+const CFGNAME_RE = /(^|\/)([^\/]*\.config|setup|babel\.config|gulpfile|Gruntfile|jest\.setup|vitest\.setup|setupTests|tailwind\.config|postcss\.config|karma\.conf|webpack\.[\w.]*|rollup\.[\w.]*|\.eslintrc|\.prettierrc|noxfile|fabfile|tasks)\.(js|cjs|mjs|ts|py)$/;
+const MANIFESTS = new Set(['package.json','pyproject.toml','setup.py','go.mod','Cargo.toml','pom.xml','build.gradle','build.gradle.kts','Gemfile','composer.json','pubspec.yaml','mix.exs','requirements.txt','Pipfile']);
+const COMPONENT_MANIFESTS = new Set(['package.json','pyproject.toml','go.mod','Cargo.toml','pom.xml','build.gradle','build.gradle.kts','composer.json','pubspec.yaml','mix.exs']);
+
+const base = p => p.split('/').pop();
+const dirOf = p => { const i = p.lastIndexOf('/'); return i < 0 ? '' : p.slice(0, i); };
+const extOf = p => { const b = base(p); const i = b.lastIndexOf('.'); return i > 0 ? b.slice(i + 1).toLowerCase() : ''; };
+function normPath(p){ const out=[]; for(const s of p.split('/')){ if(s===''||s==='.')continue; if(s==='..')out.pop(); else out.push(s);} return out.join('/'); }
+
+function classify(path){
+  const ext = extOf(path), b = base(path);
+  if (IGN_RE.test(path) || ASSET_EXT.has(ext) || /\.min\.(js|css)$/.test(b) || b.endsWith('.d.ts')) return 'ignored';
+  if (TEST_RE.test(path)) return 'test';
+  if (isAux(path)) return 'aux';
+  if (CFGNAME_RE.test(path)) return 'config';
+  if (SOURCE_EXT.has(ext)) return 'source';
+  if (DOC_EXT.has(ext)) return 'doc';
+  if (CONF_EXT.has(ext) || /^(Dockerfile|Makefile|Procfile|Jenkinsfile)/.test(b)) return 'config';
+  return 'other';
+}
+
+/* ---------------- technology catalogue ---------------- */
+// [regex (full match on normalised name), label, category]
+const TECH_RAW = [
+ // backend frameworks
+ ['express','Express','framework'],['fastify','Fastify','framework'],['koa','Koa','framework'],['@hapi/hapi|hapi','Hapi','framework'],['@nestjs/.*','NestJS','framework'],
+ ['next','Next.js','framework'],['nuxt|nuxt3','Nuxt','framework'],['@remix-run/.*','Remix','framework'],['@sveltejs/kit','SvelteKit','framework'],['astro','Astro','framework'],['gatsby','Gatsby','framework'],
+ ['django|django-.*','Django','framework'],['flask|flask-.*','Flask','framework'],['fastapi','FastAPI','framework'],['starlette','Starlette','framework'],['tornado','Tornado','framework'],['aiohttp','aiohttp','framework'],['sanic','Sanic','framework'],['streamlit','Streamlit','framework'],['gradio','Gradio','framework'],
+ ['rails|railties|actionpack','Rails','framework'],['sinatra','Sinatra','framework'],['illuminate.*|laravel/framework','Laravel','framework'],['symfony/.*|symfony\\\\.*','Symfony','framework'],
+ ['org\\.springframework.*|spring-boot.*|spring-.*','Spring','framework'],['io\\.quarkus.*|quarkus-.*','Quarkus','framework'],['io\\.micronaut.*','Micronaut','framework'],
+ ['github\\.com/gin-gonic/gin','Gin','framework'],['github\\.com/labstack/echo.*','Echo','framework'],['github\\.com/gofiber/fiber.*','Fiber','framework'],['github\\.com/go-chi/chi.*','chi','framework'],['github\\.com/gorilla/mux','gorilla/mux','framework'],
+ ['actix-web|actix-rt','Actix','framework'],['axum','Axum','framework'],['rocket','Rocket','framework'],['warp','Warp','framework'],['tokio','Tokio','framework'],
+ ['microsoft\\.aspnetcore.*|microsoft\\.asp.*','ASP.NET','framework'],['electron','Electron','framework'],['@tauri-apps/.*|tauri','Tauri','framework'],['react-native|expo','React Native','frontend'],
+ // frontend
+ ['react|react-dom','React','frontend'],['vue','Vue','frontend'],['svelte','Svelte','frontend'],['@angular/core','Angular','frontend'],['solid-js','Solid','frontend'],['preact','Preact','frontend'],['lit|lit-element','Lit','frontend'],
+ ['jquery','jQuery','frontend'],['htmx\\.org','htmx','frontend'],['alpinejs','Alpine.js','frontend'],['tailwindcss','Tailwind CSS','ui'],['bootstrap','Bootstrap','ui'],['@mui/.*','MUI','ui'],['@chakra-ui/.*','Chakra UI','ui'],['antd','Ant Design','ui'],['@radix-ui/.*','Radix UI','ui'],
+ ['redux|@reduxjs/toolkit|react-redux','Redux','state'],['zustand','Zustand','state'],['mobx','MobX','state'],['pinia','Pinia','state'],['vuex','Vuex','state'],['@tanstack/react-query|react-query','TanStack Query','state'],['swr','SWR','state'],
+ ['@apollo/client|apollo-client','Apollo Client','api'],['urql','urql','api'],['graphql|graphql-.*','GraphQL','api'],['@apollo/server|apollo-server.*','Apollo Server','api'],['type-graphql|graphene','GraphQL server','api'],['@trpc/.*','tRPC','api'],['@grpc/.*|grpcio|grpcio-.*|google\\.golang\\.org/grpc','gRPC','api'],['swagger.*|drf-yasg|flask-restx','OpenAPI/Swagger','api'],
+ ['vite','Vite','build'],['webpack|webpack-cli','webpack','build'],['rollup','Rollup','build'],['esbuild','esbuild','build'],['parcel','Parcel','build'],['turbo','Turborepo','build'],['nx|@nrwl/.*|@nx/.*','Nx','build'],['lerna','Lerna','build'],['typescript','TypeScript','build'],['babel|@babel/.*','Babel','build'],
+ // data
+ ['pg|postgres|psycopg2|psycopg2-binary|psycopg|asyncpg|pgx|github\\.com/jackc/pgx.*|github\\.com/lib/pq|org\\.postgresql.*|npgsql.*|tokio-postgres|@vercel/postgres|postgresql|pg-promise','PostgreSQL','database'],
+ ['mysql|mysql2|pymysql|mysqlclient|mysql-connector-python|github\\.com/go-sql-driver/mysql|com\\.mysql.*|mysql-connector-java','MySQL','database'],['mariadb','MariaDB','database'],
+ ['mongodb|mongoose|pymongo|motor|mongoengine|beanie|go\\.mongodb\\.org/.*|org\\.mongodb.*|com\\.mongodb.*','MongoDB','database'],
+ ['sqlite3|better-sqlite3|aiosqlite|sqlite|github\\.com/mattn/go-sqlite3|@libsql/client|rusqlite','SQLite','database'],
+ ['@supabase/supabase-js|supabase','Supabase','database'],['firebase|firebase-admin|@firebase/.*|firebase_admin','Firebase','database'],['cassandra-driver','Cassandra','database'],['neo4j-driver|neo4j','Neo4j','database'],['@planetscale/database','PlanetScale','database'],['clickhouse-.*|@clickhouse/.*','ClickHouse','database'],['@aws-sdk/client-dynamodb|@aws-sdk/lib-dynamodb','DynamoDB','database'],['@neondatabase/.*','Neon','database'],['@prisma/client|prisma','Prisma ORM','orm'],
+ ['typeorm','TypeORM','orm'],['sequelize','Sequelize','orm'],['knex','Knex','orm'],['drizzle-orm','Drizzle','orm'],['sqlalchemy|alembic','SQLAlchemy','orm'],['peewee','Peewee','orm'],['tortoise-orm','Tortoise ORM','orm'],['sqlmodel','SQLModel','orm'],['gorm\\.io/.*','GORM','orm'],['diesel|sqlx|sea-orm','Rust SQL','orm'],['hibernate.*|org\\.hibernate.*|jakarta\\.persistence.*|javax\\.persistence.*','Hibernate/JPA','orm'],['microsoft\\.entityframeworkcore.*','EF Core','orm'],
+ ['redis|ioredis|@upstash/redis|aioredis|redis-py|github\\.com/(redis/go-redis|go-redis/redis).*|redis\\.clients\\..*|io\\.lettuce.*|stackexchange\\.redis','Redis','cache'],['memcached|pymemcache|memjs','Memcached','cache'],
+ ['bullmq|bull|bee-queue','BullMQ (Redis queue)','queue'],['amqplib|pika|aio-pika|kombu|github\\.com/(rabbitmq/amqp091-go|streadway/amqp)|com\\.rabbitmq.*|lapin','RabbitMQ','queue'],['celery','Celery','queue'],['rq|dramatiq|huey','Task queue (Python)','queue'],
+ ['kafkajs|confluent-kafka|kafka-python|aiokafka|github\\.com/(ibm|shopify)/sarama|github\\.com/segmentio/kafka-go|org\\.apache\\.kafka.*|rdkafka','Kafka','queue'],['nats|nats\\.js|nats-py|github\\.com/nats-io/.*','NATS','queue'],
+ ['sidekiq|resque|delayed_job','Sidekiq/Resque','queue'],['inngest','Inngest','queue'],['@temporalio/.*|temporalio|go\\.temporal\\.io/.*','Temporal','queue'],['@aws-sdk/client-sqs','AWS SQS','queue'],['apscheduler|node-cron|agenda|node-schedule|cron','Scheduler','queue'],
+ ['elasticsearch|@elastic/elasticsearch|org\\.elasticsearch.*|elastic-transport','Elasticsearch','search'],['opensearch-py|@opensearch-project/.*','OpenSearch','search'],['algoliasearch','Algolia','search'],['meilisearch','Meilisearch','search'],['typesense','Typesense','search'],
+ ['boto3|botocore|aws-sdk|@aws-sdk/.*|software\\.amazon\\.awssdk.*|com\\.amazonaws.*|github\\.com/aws/aws-sdk-go.*|aws-config|rusoto.*','AWS','cloud'],['@aws-sdk/client-s3|minio|@google-cloud/storage|azure-storage-blob|@azure/storage-blob|cloudinary|@uploadthing/.*|uploadthing','Object storage','storage'],
+ ['google-cloud-.*|@google-cloud/.*|google\\.cloud.*|cloud\\.google\\.com/go.*','Google Cloud','cloud'],['azure-.*|@azure/.*|microsoft\\.azure.*|azure\\..*','Azure','cloud'],['@vercel/.*','Vercel','cloud'],['@cloudflare/.*|wrangler|miniflare','Cloudflare','cloud'],['@netlify/.*','Netlify','cloud'],
+ // auth
+ ['passport|passport-.*','Passport','auth'],['jsonwebtoken|jose|pyjwt|python-jose|github\\.com/golang-jwt/.*|io\\.jsonwebtoken.*','JWT','auth'],['next-auth|@auth/.*|authlib|lucia|better-auth','Auth library','auth'],['@clerk/.*','Clerk','auth'],['@auth0/.*|auth0|auth0-python','Auth0','auth'],['keycloak.*|python-keycloak|org\\.keycloak.*','Keycloak','auth'],['bcrypt|bcryptjs|argon2|passlib','Password hashing','auth'],['devise|omniauth','Devise/OmniAuth','auth'],['supertokens-.*','SuperTokens','auth'],['oauthlib|requests-oauthlib|django-allauth|social-auth-.*','OAuth','auth'],
+ // ai
+ ['openai','OpenAI','ai'],['@anthropic-ai/sdk|anthropic','Anthropic','ai'],['langchain|langchain-.*|@langchain/.*|langgraph|llama-index.*|llamaindex','LangChain / LlamaIndex','ai'],['@google/generative-ai|google-generativeai|google-genai','Google Gemini','ai'],['transformers|huggingface-hub|huggingface_hub|@huggingface/.*|sentence-transformers','Hugging Face','ai'],['torch|pytorch|tensorflow|keras|scikit-learn|sklearn|jax|xgboost','ML framework','ai'],['ollama','Ollama','ai'],['cohere','Cohere','ai'],['ai|@ai-sdk/.*','Vercel AI SDK','ai'],['chromadb|pinecone-client|@pinecone-database/pinecone|weaviate-client|qdrant-client|pgvector|faiss-cpu|lancedb','Vector DB','ai'],
+ ['stripe|@stripe/.*|stripe-.*|com\\.stripe.*','Stripe','payments'],['paypal.*|@paypal/.*|braintree|razorpay|@lemonsqueezy/.*|paddle.*','Payments','payments'],
+ ['@sentry/.*|sentry-sdk|sentry_sdk|sentry-.*|io\\.sentry.*','Sentry','monitoring'],['datadog|dd-trace|ddtrace|datadog-.*','Datadog','monitoring'],['newrelic|new-relic','New Relic','monitoring'],['prom-client|prometheus-client|prometheus_client|github\\.com/prometheus/.*|micrometer.*','Prometheus','monitoring'],['@opentelemetry/.*|opentelemetry.*|go\\.opentelemetry\\.io/.*','OpenTelemetry','monitoring'],['bugsnag|@bugsnag/.*|rollbar|honeybadger','Error tracking','monitoring'],['posthog-.*|posthog|mixpanel|@segment/.*|analytics-node|amplitude.*','Product analytics','monitoring'],
+ ['nodemailer|@sendgrid/.*|sendgrid|mailgun.*|postmark.*|resend|@react-email/.*|emails|flask-mail|django-anymail|ses','Email','email'],['twilio','Twilio (SMS/voice)','email'],
+ ['socket\\.io|socket\\.io-client|ws|websockets|pusher|pusher-js|ably|channels|django-channels|action_cable|actioncable','WebSockets / realtime','realtime'],
+ // misc libs (tags)
+ ['axios|node-fetch|got|undici|requests|httpx|urllib3|reqwest|ky|superagent|okhttp.*','HTTP client','http'],['winston|pino|bunyan|loguru|structlog|logrus|zap|go\\.uber\\.org/zap|slog|log4j.*|logback.*|tracing','Logging','logging'],
+ ['jest|vitest|mocha|pytest|cypress|@playwright/test|playwright|junit.*|testify|rspec|phpunit|supertest|@testing-library/.*','Testing','test'],
+ ['zod|joi|yup|pydantic|class-validator|ajv|marshmallow','Validation','util'],['lodash|underscore|ramda|date-fns|dayjs|moment|numpy|pandas|scipy','Utilities','util'],
+ ['celery-beat','Celery','queue'],['gunicorn|uvicorn|hypercorn|waitress|puma|unicorn','App server','framework'],['alembic','Alembic migrations','orm'],['docker','Docker SDK','infra']
+];
+const TECH = TECH_RAW.map(([p,l,c]) => ({re:new RegExp('^(?:'+p+')$'), label:l, cat:c}));
+const SERVICE_CATS = new Set(['database','cache','queue','search','storage','cloud','auth','ai','payments','monitoring','email','realtime','gateway']);
+const DOCKER_IMAGES = [
+ [/(^|\/)(postgres|postgresql|pgvector|timescaledb|supabase\/postgres|postgis)/i,'PostgreSQL','database'],[/(^|\/)mysql/i,'MySQL','database'],[/(^|\/)mariadb/i,'MariaDB','database'],[/(^|\/)mongo/i,'MongoDB','database'],
+ [/(^|\/)(redis|valkey|keydb)/i,'Redis','cache'],[/memcached/i,'Memcached','cache'],[/rabbitmq/i,'RabbitMQ','queue'],[/(kafka|redpanda)/i,'Kafka','queue'],[/(^|\/)nats/i,'NATS','queue'],[/zookeeper/i,'ZooKeeper','queue'],
+ [/elasticsearch/i,'Elasticsearch','search'],[/opensearch/i,'OpenSearch','search'],[/meilisearch/i,'Meilisearch','search'],[/typesense/i,'Typesense','search'],[/minio/i,'MinIO','storage'],[/localstack/i,'AWS','cloud'],
+ [/clickhouse/i,'ClickHouse','database'],[/cassandra/i,'Cassandra','database'],[/neo4j/i,'Neo4j','database'],[/influxdb/i,'InfluxDB','database'],
+ [/(^|\/)(nginx|traefik|caddy|haproxy|envoy|kong)/i,'Gateway / proxy','gateway'],[/keycloak/i,'Keycloak','auth'],[/(mailhog|mailpit|maildev)/i,'Email','email'],[/(prometheus|grafana|jaeger|loki|otel|opentelemetry)/i,'Prometheus','monitoring']
+];
+const techCache = new Map();
+function techFor(name){
+  const n = name.toLowerCase().replace(/_/g,'-');
+  if (techCache.has(n)) return techCache.get(n);
+  let r = null;
+  for (const t of TECH) if (t.re.test(n)) { r = t; break; }
+  techCache.set(n, r); return r;
+}
+
+/* ---------------- tiny YAML ---------------- */
+function parseYaml(text){
+  const lines = text.replace(/\t/g,'  ').split('\n').map(l=>l.replace(/(^|\s)#.*$/,'').replace(/\s+$/,'')).filter(l=>l.trim()!==''&&l.trim()!=='---'&&!l.startsWith('%'));
+  let i = 0;
+  const ind = l => l.match(/^ */)[0].length;
+  const splitTop = s => { const out=[]; let d=0,cur='',q=null; for(const ch of s){ if(q){cur+=ch; if(ch===q)q=null; continue;} if(ch==='"'||ch==="'"){q=ch;cur+=ch;continue;} if(ch==='['||ch==='{')d++; if(ch===']'||ch==='}')d--; if(ch===','&&d===0){out.push(cur);cur='';} else cur+=ch;} if(cur.trim())out.push(cur); return out; };
+  function scalar(s){
+    s = s.trim();
+    let m = s.match(/^(['"])([\s\S]*)\1$/); if (m) return m[2];
+    if (s==='true') return true; if (s==='false') return false; if (s==='null'||s==='~') return null;
+    if (/^-?\d+(\.\d+)?$/.test(s)) return +s;
+    if (s[0]==='['&&s.endsWith(']')) return splitTop(s.slice(1,-1)).map(scalar);
+    if (s[0]==='{'&&s.endsWith('}')) { const o={}; for(const kv of splitTop(s.slice(1,-1))){ const j=kv.indexOf(':'); if(j>0)o[kv.slice(0,j).trim()]=scalar(kv.slice(j+1)); } return o; }
+    return s;
+  }
+  const isItem = l => /^-(\s|$)/.test(l.trim());
+  function block(){
+    if (i>=lines.length) return null;
+    const n = ind(lines[i]);
+    return isItem(lines[i]) ? list(n) : map(n);
+  }
+  function list(n){
+    const arr = [];
+    while (i<lines.length && ind(lines[i])===n && isItem(lines[i])) {
+      const c = lines[i].trim().slice(1).trim();
+      if (c==='') { i++; arr.push(i<lines.length&&ind(lines[i])>n ? block() : null); }
+      else if (/^("[^"]*"|'[^']*'|[\w.\-\/$]+):(\s|$)/.test(c)) { lines[i] = ' '.repeat(n+2)+c; arr.push(map(n+2)); }
+      else { i++; arr.push(scalar(c)); }
+    }
+    return arr;
+  }
+  function map(n){
+    const o = {};
+    while (i<lines.length && ind(lines[i])===n && !isItem(lines[i])) {
+      const m = lines[i].trim().match(/^("[^"]*"|'[^']*'|[^:]+?):(?:\s+(.*))?$/);
+      if (!m) { i++; continue; }
+      const key = m[1].replace(/^["']|["']$/g,''); const rest = m[2]; i++;
+      if (rest===undefined||rest==='') {
+        if (i<lines.length && (ind(lines[i])>n || (ind(lines[i])===n && isItem(lines[i])))) o[key] = block(); else o[key] = null;
+      } else if (/^[|>][+-]?$/.test(rest)) {
+        const buf=[]; while(i<lines.length && ind(lines[i])>n) buf.push(lines[i++].trim()); o[key]=buf.join('\n');
+      } else o[key] = scalar(rest);
+    }
+    return o;
+  }
+  try { return block() || {}; } catch(e){ return {}; }
+}
+
+/* ---------------- manifest parsers ---------------- */
+function parseManifest(path, text){
+  const b = base(path), out = {path, eco:null, name:null, deps:[], devDeps:[], extra:{}};
+  try {
+    if (b==='package.json') {
+      const j = JSON.parse(text); out.eco='npm'; out.name=j.name||null;
+      out.deps = Object.keys(j.dependencies||{}).concat(Object.keys(j.peerDependencies||{})); out.devDeps = Object.keys(j.devDependencies||{});
+      out.extra = {scripts:j.scripts||{}, main:j.main, bin:j.bin, workspaces:Array.isArray(j.workspaces)?j.workspaces:(j.workspaces&&j.workspaces.packages)||null, version:j.version, description:j.description, private:j.private};
+    } else if (/^requirements.*\.txt$/.test(b)) {
+      out.eco='pip'; out.deps = text.split('\n').map(l=>l.trim()).filter(l=>l&&!l.startsWith('#')&&!l.startsWith('-')).map(l=>(l.match(/^[A-Za-z0-9_.\-]+/)||[''])[0]).filter(Boolean);
+    } else if (b==='pyproject.toml') {
+      out.eco='pip'; out.name=(text.match(/^\s*name\s*=\s*["']([^"']+)["']/m)||[])[1]||null;
+      const names=new Set();
+      for (const m of text.matchAll(/(?:^|\n)\s*(?:dependencies|requires)\s*=\s*\[([\s\S]*?)\]/g)) for (const s of m[1].matchAll(/["']([A-Za-z0-9_.\-]+)/g)) names.add(s[1]);
+      const poetry = text.match(/\[tool\.poetry\.dependencies\]([\s\S]*?)(?=\n\[|$)/); if (poetry) for (const m of poetry[1].matchAll(/^\s*([A-Za-z0-9_.\-]+)\s*=/gm)) if (m[1]!=='python') names.add(m[1]);
+      out.deps=[...names];
+      const sc=text.match(/\[project\.scripts\]([\s\S]*?)(?=\n\[|$)/); if(sc) out.extra.scripts=Object.fromEntries([...sc[1].matchAll(/^\s*([\w.\-]+)\s*=\s*["']([^"']+)/gm)].map(m=>[m[1],m[2]]));
+    } else if (b==='Pipfile') {
+      out.eco='pip'; const m=text.match(/\[packages\]([\s\S]*?)(?=\n\[|$)/); if(m) out.deps=[...m[1].matchAll(/^\s*([A-Za-z0-9_.\-]+)\s*=/gm)].map(x=>x[1]);
+    } else if (b==='setup.py') {
+      out.eco='pip'; const m=text.match(/install_requires\s*=\s*\[([\s\S]*?)\]/); if(m) out.deps=[...m[1].matchAll(/["']([A-Za-z0-9_.\-]+)/g)].map(x=>x[1]);
+    } else if (b==='go.mod') {
+      out.eco='go'; out.name=(text.match(/^module\s+(\S+)/m)||[])[1]||null;
+      for (const m of text.matchAll(/require\s*\(([\s\S]*?)\)/g)) for (const l of m[1].split('\n')) { const t=l.trim().split(/\s+/)[0]; if(t&&!t.startsWith('//')) out.deps.push(t); }
+      for (const m of text.matchAll(/^require\s+(\S+)\s+v/gm)) out.deps.push(m[1]);
+    } else if (b==='Cargo.toml') {
+      out.eco='cargo'; out.name=(text.match(/\[package\][\s\S]*?name\s*=\s*"([^"]+)"/)||[])[1]||null;
+      for (const sec of text.matchAll(/\[(?:[\w-]+\.)?dependencies\]([\s\S]*?)(?=\n\[|$)/g)) for (const m of sec[1].matchAll(/^\s*([A-Za-z0-9_\-]+)\s*=/gm)) out.deps.push(m[1]);
+      const ws=text.match(/members\s*=\s*\[([\s\S]*?)\]/); if(ws) out.extra.workspaces=[...ws[1].matchAll(/"([^"]+)"/g)].map(x=>x[1]);
+    } else if (b==='Gemfile') {
+      out.eco='gem'; out.deps=[...text.matchAll(/^\s*gem\s+['"]([^'"]+)['"]/gm)].map(m=>m[1]);
+    } else if (b==='pom.xml') {
+      out.eco='maven'; out.name=(text.match(/<artifactId>([^<]+)<\/artifactId>/)||[])[1]||null;
+      for (const m of text.matchAll(/<dependency>([\s\S]*?)<\/dependency>/g)) { const g=(m[1].match(/<groupId>([^<]+)/)||[])[1], a=(m[1].match(/<artifactId>([^<]+)/)||[])[1]; if(a) out.deps.push(a); if(g) out.deps.push(g); }
+    } else if (/^build\.gradle/.test(b)) {
+      out.eco='gradle'; for (const m of text.matchAll(/['"]([\w.\-]+):([\w.\-]+)(?::[^'"]*)?['"]/g)) { out.deps.push(m[2]); out.deps.push(m[1]); }
+    } else if (b==='composer.json') {
+      const j=JSON.parse(text); out.eco='composer'; out.name=j.name||null; out.deps=Object.keys(j.require||{}); out.devDeps=Object.keys(j['require-dev']||{});
+    } else if (b==='pubspec.yaml') {
+      const y=parseYaml(text); out.eco='pub'; out.name=y.name||null; out.deps=Object.keys(y.dependencies||{});
+    } else if (b==='mix.exs') {
+      out.eco='hex'; out.deps=[...text.matchAll(/\{:(\w+),/g)].map(m=>m[1]);
+    } else if (b.endsWith('.csproj')) {
+      out.eco='nuget'; out.deps=[...text.matchAll(/PackageReference\s+Include="([^"]+)"/g)].map(m=>m[1]);
+    }
+  } catch(e){}
+  return out;
+}
+
+/* ---------------- source scanning ---------------- */
+const NODE_BUILTIN = new Set('assert buffer child_process cluster crypto dgram dns events fs http http2 https net os path perf_hooks process querystring readline stream string_decoder timers tls tty url util v8 vm worker_threads zlib module console constants'.split(' '));
+const PY_STDLIB = new Set('os sys re json math time datetime typing collections itertools functools pathlib logging argparse subprocess threading multiprocessing asyncio abc enum dataclasses copy io random string uuid hashlib base64 tempfile shutil glob unittest warnings traceback contextlib inspect types operator decimal fractions statistics csv sqlite3 socket ssl http urllib email html xml zipfile gzip tarfile pickle struct platform signal select queue heapq bisect array weakref gc textwrap pprint secrets hmac configparser getpass ctypes concurrent importlib pkgutil unicodedata locale gettext codecs fnmatch stat errno atexit sched smtplib ftplib imaplib webbrowser wsgiref cgi cmd shlex curses tkinter __future__ builtins numbers cmath zlib bz2 lzma tomllib zoneinfo graphlib mimetypes ast dis token tokenize site sysconfig venv ensurepip pdb timeit cProfile profile trace code codeop runpy zipimport selectors mmap fcntl termios pwd grp resource syslog readline rlcompleter this antigravity typing_extensions'.split(' '));
+const JS_EXT_TRY = ['.ts','.tsx','.js','.jsx','.mjs','.cjs','.vue','.svelte','.astro'];
+
+function stripJsComments(t){ return t.replace(/\/\*[\s\S]*?\*\//g,'').replace(/^\s*\/\/.*$/gm,''); }
+function extractFile(f, text){
+  const r = {imports:[], routes:[], models:[], env:[], entry:null, pkg:null, ns:null};
+  const lang = f.lang, ext = f.ext;
+  if (['JavaScript','TypeScript','Vue','Svelte','Astro'].includes(lang) || ext==='dart') {
+    const t = stripJsComments(text); const seen = new Set();
+    const add = s => { if(!seen.has(s)){ seen.add(s); r.imports.push(s); } };
+    for (const m of t.matchAll(/(?:^|[^\w$.])import\s+(?:type\s+)?(?:[\w*{}\s,$]+?\s+from\s+)?['"]([^'"\n]+)['"]/g)) add(m[1]);
+    for (const m of t.matchAll(/\bexport\s+(?:type\s+)?(?:\*(?:\s+as\s+\w+)?|\{[^}]*\})\s+from\s+['"]([^'"\n]+)['"]/g)) add(m[1]);
+    for (const m of t.matchAll(/\brequire\s*\(\s*['"]([^'"\n]+)['"]\s*\)/g)) add(m[1]);
+    for (const m of t.matchAll(/\bimport\s*\(\s*['"]([^'"\n]+)['"]\s*\)/g)) add(m[1]);
+    for (const m of t.matchAll(/\bprocess\.env\.([A-Z][A-Z0-9_]{2,})/g)) r.env.push(m[1]);
+    for (const m of t.matchAll(/\bimport\.meta\.env\.([A-Z][A-Z0-9_]{2,})/g)) r.env.push(m[1]);
+    for (const m of t.matchAll(/\b(?:app|router|server|api|route|fastify|r|routes|v1|v2)\.(get|post|put|patch|delete|all|head|options)\s*\(\s*(['"`])([^'"`\n]+)\2/g)) if (/^[\/*]/.test(m[3])) r.routes.push({method:m[1].toUpperCase(),path:m[3]});
+    for (const m of t.matchAll(/@(Get|Post|Put|Patch|Delete)\(\s*['"`]?([^'"`)\n]*)['"`]?\s*\)/g)) r.routes.push({method:m[1].toUpperCase(),path:'/'+m[2].replace(/^\//,''),nest:true});
+    for (const m of t.matchAll(/@Entity\([^)]*\)\s*(?:export\s+)?class\s+(\w+)/g)) r.models.push({name:m[1],kind:'TypeORM entity'});
+    for (const m of t.matchAll(/mongoose\.model(?:<[^>]*>)?\(\s*['"](\w+)/g)) r.models.push({name:m[1],kind:'Mongoose model'});
+    for (const m of t.matchAll(/(?:sequelize|db)\.define\(\s*['"](\w+)/g)) r.models.push({name:m[1],kind:'Sequelize model'});
+    for (const m of t.matchAll(/pgTable\(\s*['"](\w+)/g)) r.models.push({name:m[1],kind:'Drizzle table'});
+    if (/\.listen\s*\(|createServer\s*\(|serve\s*\(\s*\{|new\s+Hono\(|Deno\.serve/.test(t) && /(express|fastify|koa|http|hono|createServer|app\.listen)/.test(t)) r.entry = 'server';
+    else if (/^#!.*node|commander|yargs|process\.argv/m.test(t) && /(^|\/)(bin|cli)/i.test(f.path)) r.entry = 'cli';
+  } else if (lang==='Python') {
+    for (const m of text.matchAll(/^[ \t]*from\s+(\.*)([\w.]*)\s+import\s+([^\n#]+)/gm)) r.imports.push({dots:m[1].length,mod:m[2],names:m[3].replace(/[()\\]/g,'').split(',').map(s=>s.trim().split(/\s+as\s+/)[0]).filter(Boolean)});
+    for (const m of text.matchAll(/^[ \t]*import\s+([\w.]+(?:\s+as\s+\w+)?(?:\s*,\s*[\w.]+(?:\s+as\s+\w+)?)*)/gm)) for (const part of m[1].split(',')) r.imports.push({dots:0,mod:part.trim().split(/\s+as\s+/)[0],names:[]});
+    for (const m of text.matchAll(/(?:os\.environ(?:\.get)?\s*[\[(]\s*|os\.getenv\s*\(\s*|environ\.get\(\s*)['"]([A-Z][A-Z0-9_]{2,})/g)) r.env.push(m[1]);
+    for (const m of text.matchAll(/@\w+(?:\.\w+)*\.(get|post|put|patch|delete|websocket)\s*\(\s*f?['"]([^'"]*)['"]/g)) r.routes.push({method:m[1].toUpperCase(),path:m[2]||'/'});
+    for (const m of text.matchAll(/@\w+(?:\.\w+)*\.route\s*\(\s*['"]([^'"]*)['"](?:[^)]*methods\s*=\s*\[([^\]]*)\])?/g)) r.routes.push({method:(m[2]||'GET').replace(/['"\s]/g,'').toUpperCase()||'GET',path:m[1]});
+    if (/(^|\/)urls\.py$/.test(f.path)) for (const m of text.matchAll(/\b(?:re_)?path\s*\(\s*r?['"]([^'"]*)['"]/g)) r.routes.push({method:'ANY',path:'/'+m[1]});
+    for (const m of text.matchAll(/^class\s+(\w+)\((?:[\w.]*\.)?(Model|Base|DeclarativeBase|SQLModel|Document|AbstractUser|BaseModel)\b/gm)) if (m[2]!=='BaseModel') r.models.push({name:m[1],kind:m[2]==='Model'?'Django model':m[2]==='Document'?'Document':'ORM model'});
+    if (/if\s+__name__\s*==\s*['"]__main__['"]/.test(text)) r.entry='cli';
+    if (/(FastAPI|Flask|Quart|Sanic|Starlette)\s*\(/.test(text) && /=\s*(FastAPI|Flask|Quart|Sanic|Starlette)\s*\(/.test(text)) r.entry='server';
+    if (/uvicorn\.run|app\.run\(/.test(text)) r.entry='server';
+  } else if (lang==='Go') {
+    for (const m of text.matchAll(/^import\s*\(([\s\S]*?)\)/gm)) for (const s of m[1].matchAll(/"([^"]+)"/g)) r.imports.push(s[1]);
+    for (const m of text.matchAll(/^import\s+(?:\w+\s+)?"([^"]+)"/gm)) r.imports.push(m[1]);
+    for (const m of text.matchAll(/os\.Getenv\(\s*"([A-Z][A-Z0-9_]{2,})"/g)) r.env.push(m[1]);
+    for (const m of text.matchAll(/\.(GET|POST|PUT|PATCH|DELETE|Get|Post|Put|Patch|Delete|Handle|HandleFunc|Any)\s*\(\s*"([^"]+)"/g)) if (m[2][0]==='/') r.routes.push({method:m[1].toUpperCase().replace('HANDLEFUNC','ANY').replace('HANDLE','ANY'),path:m[2]});
+    if (/^func\s+main\s*\(\s*\)/m.test(text)) r.entry = /ListenAndServe|\.Run\(|\.Listen\(|grpc\.NewServer/.test(text)?'server':'cli';
+    r.pkg = (text.match(/^package\s+(\w+)/m)||[])[1];
+  } else if (lang==='Rust') {
+    for (const m of text.matchAll(/^\s*(?:pub(?:\([^)]*\))?\s+)?use\s+([\w:]+)/gm)) r.imports.push({use:m[1]});
+    for (const m of text.matchAll(/^\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+(\w+)\s*;/gm)) r.imports.push({mod:m[1]});
+    for (const m of text.matchAll(/std::env::var\(\s*"([A-Z][A-Z0-9_]{2,})"/g)) r.env.push(m[1]);
+    for (const m of text.matchAll(/#\[(get|post|put|patch|delete)\(\s*"([^"]+)"/g)) r.routes.push({method:m[1].toUpperCase(),path:m[2]});
+    for (const m of text.matchAll(/\.route\(\s*"([^"]+)"/g)) r.routes.push({method:'ANY',path:m[1]});
+    if (/^\s*(async\s+)?fn\s+main\s*\(/m.test(text)) r.entry = /(HttpServer|axum::serve|Router::new|rocket::build)/.test(text)?'server':'cli';
+  } else if (['Java','Kotlin','Scala'].includes(lang)) {
+    for (const m of text.matchAll(/^\s*import\s+(?:static\s+)?([\w.]+?)(?:\.\*|\._)?\s*;?\s*$/gm)) r.imports.push(m[1]+(/\.(\*|_)\s*;?\s*$/.test(m[0])?'.*':''));
+    r.pkg = (text.match(/^\s*package\s+([\w.]+)/m)||[])[1];
+    for (const m of text.matchAll(/@(Get|Post|Put|Patch|Delete|Request)Mapping\s*(?:\(\s*(?:(?:value|path)\s*=\s*)?\{?\s*"([^"]*)")?/g)) r.routes.push({method:m[1]==='Request'?'ANY':m[1].toUpperCase(),path:'/'+(m[2]||'').replace(/^\//,'')});
+    for (const m of text.matchAll(/@Entity\b[\s\S]{0,300}?class\s+(\w+)/g)) r.models.push({name:m[1],kind:'JPA entity'});
+    for (const m of text.matchAll(/System\.getenv\(\s*"([A-Z][A-Z0-9_]{2,})"/g)) r.env.push(m[1]);
+    if (/@SpringBootApplication/.test(text)) r.entry='server'; else if (/static\s+void\s+main\s*\(|fun\s+main\s*\(/.test(text)) r.entry='cli';
+  } else if (lang==='Ruby') {
+    for (const m of text.matchAll(/^\s*require_relative\s+['"]([^'"]+)['"]/gm)) r.imports.push({rel:m[1]});
+    for (const m of text.matchAll(/^\s*require\s+['"]([^'"]+)['"]/gm)) r.imports.push({gem:m[1]});
+    if (/(^|\/)routes\.rb$/.test(f.path)) { for (const m of text.matchAll(/^\s*(get|post|put|patch|delete)\s+['"]([^'"]+)['"]/gm)) r.routes.push({method:m[1].toUpperCase(),path:'/'+m[2].replace(/^\//,'')}); for (const m of text.matchAll(/^\s*resources?\s+:(\w+)/gm)) r.routes.push({method:'REST',path:'/'+m[1]}); }
+    for (const m of text.matchAll(/^class\s+(\w+)\s*<\s*(?:ApplicationRecord|ActiveRecord::Base)/gm)) r.models.push({name:m[1],kind:'ActiveRecord model'});
+    for (const m of text.matchAll(/ENV\[['"]([A-Z][A-Z0-9_]{2,})/g)) r.env.push(m[1]);
+  } else if (lang==='PHP') {
+    for (const m of text.matchAll(/^\s*use\s+([\w\\]+)(?:\s+as\s+\w+)?\s*;/gm)) r.imports.push(m[1]);
+    r.pkg = (text.match(/^\s*namespace\s+([\w\\]+)/m)||[])[1];
+    for (const m of text.matchAll(/Route::(get|post|put|patch|delete|any)\(\s*['"]([^'"]+)/g)) r.routes.push({method:m[1].toUpperCase(),path:'/'+m[2].replace(/^\//,'')});
+    for (const m of text.matchAll(/env\(\s*['"]([A-Z][A-Z0-9_]{2,})/g)) r.env.push(m[1]);
+  } else if (lang==='C#') {
+    for (const m of text.matchAll(/^\s*using\s+(?:static\s+)?([\w.]+)\s*;/gm)) r.imports.push(m[1]);
+    r.ns = (text.match(/^\s*namespace\s+([\w.]+)/m)||[])[1];
+    for (const m of text.matchAll(/\[Http(Get|Post|Put|Patch|Delete)(?:\(\s*"([^"]*)")?/g)) r.routes.push({method:m[1].toUpperCase(),path:'/'+(m[2]||'').replace(/^\//,'')});
+    if (/static\s+(async\s+)?(void|Task)\s+Main\s*\(|WebApplication\.CreateBuilder/.test(text)) r.entry='server';
+  } else if (['C','C++','Objective-C'].includes(lang)) {
+    for (const m of text.matchAll(/^\s*#\s*include\s+"([^"]+)"/gm)) r.imports.push(m[1]);
+    if (/^\s*int\s+main\s*\(/m.test(text)) r.entry='cli';
+  } else if (lang==='SQL') {
+    for (const m of text.matchAll(/create\s+table\s+(?:if\s+not\s+exists\s+)?[`"\[]?([\w.]+)/gi)) r.models.push({name:m[1],kind:'SQL table'});
+  } else if (lang==='Prisma') {
+    for (const m of text.matchAll(/^model\s+(\w+)\s*\{/gm)) r.models.push({name:m[1],kind:'Prisma model'});
+    const p = text.match(/provider\s*=\s*"(postgresql|mysql|sqlite|mongodb|sqlserver|cockroachdb)"/); if (p) r.dbProvider = p[1];
+  }
+  return r;
+}
+
+/* ---------------- component discovery ---------------- */
+const CONTAINERS = new Set(['apps','packages','services','cmd','internal','pkg','crates','libs','modules','plugins','src','lib','app','projects','microservices','components-lib','workspaces']);
+function buildComponents(srcFiles, manifestDirs){
+  const total = srcFiles.length;
+  const TARGET = 16;
+  const mset = new Set(manifestDirs);
+  const hasManifestBelow = path => manifestDirs.some(d => d !== path && (path===''||d.startsWith(path+'/')));
+  function children(node){
+    const depth = node.path ? node.path.split('/').length : 0;
+    const groups = new Map(); const direct = [];
+    for (const f of node.files) {
+      const parts = f.path.split('/');
+      if (parts.length-1 === depth) direct.push(f); else { const k=parts[depth]; if(!groups.has(k)) groups.set(k,[]); groups.get(k).push(f); }
+    }
+    return {groups, direct, depth};
+  }
+  function collapse(node){
+    for(;;){
+      if (node.path && mset.has(node.path) && node.files.length<14) return node;
+      const {groups, direct} = children(node);
+      if (direct.length===0 && groups.size===1) { const [k,fs]=[...groups][0]; node={path:(node.path?node.path+'/':'')+k, files:fs}; } else return node;
+    }
+  }
+  function expand(node){
+    const {groups, direct} = children(node);
+    const out = []; let other = direct.slice();
+    for (const [k, fs] of groups) {
+      const p = (node.path?node.path+'/':'')+k;
+      if (groups.size > 5 && fs.length < 3 && !mset.has(p) && !hasManifestBelow(p)) other = other.concat(fs);
+      else out.push(collapse({path:p, files:fs}));
+    }
+    if (other.length) out.push({path:node.path, files:other, isRest:true});
+    return out;
+  }
+  const canExpand = n => { if (n.isRest) return false; if (n.path && mset.has(n.path) && !hasManifestBelow(n.path) && n.files.length<14) return false; const {groups,direct}=children(n); if (groups.size+(direct.length?1:0)<2) return false; return (n.path?n.path.split('/').length:0) < 14; };
+  const forced = n => canExpand(n) && (n.path===''||CONTAINERS.has(base(n.path))||hasManifestBelow(n.path));
+  let comps = [collapse({path:'',files:srcFiles})];
+  for (let guard=0; guard<500; guard++) {
+    let pick = comps.find(forced);
+    if (!pick && comps.length < TARGET) {
+      pick = comps.filter(n=>canExpand(n) && n.files.length >= Math.max(6,total*0.12)).sort((a,b)=>b.files.length-a.files.length)[0];
+    }
+    if (!pick) break;
+    const kids = expand(pick);
+    if (kids.length<2 && !kids[0]?.isRest && kids[0] && kids[0].path===pick.path) break;
+    comps = comps.filter(c=>c!==pick).concat(kids);
+  }
+  // merge extra small comps beyond cap
+  const CAP = 60;
+  if (comps.length > CAP) {
+    comps.sort((a,b)=>b.files.length-a.files.length);
+    const keep = comps.slice(0,CAP-1), rest = comps.slice(CAP-1);
+    keep.push({path:'', files:rest.flatMap(c=>c.files), isRest:true, isMisc:true});
+    comps = keep;
+  }
+  return comps;
+}
+
+const ROLE_TOKENS = {
+ client:'web client frontend front ui components component pages views view www static public templates template mobile ios android desktop widgets screens layouts styles css site website landing dashboard admin renderer webapp'.split(' '),
+ api:'api apis routes route router routers controllers controller handlers handler endpoints endpoint server http rest graphql grpc rpc gateway middleware resolvers bff backend'.split(' '),
+ cli:'cli cmd bin commands command console'.split(' '),
+ worker:'worker workers jobs job tasks task queue queues cron consumers consumer scheduler schedulers daemon'.split(' '),
+ core:'core services service domain usecases engine logic business features feature'.split(' '),
+ data:'models model db database stores repository repositories repo schema schemas orm entities entity dao prisma persistence storage sql data'.split(' '),
+ shared:'utils util utilities common shared helpers helper types typings constants config configs support commons base sdk'.split(' '),
+ infra:'infra infrastructure deploy deployment terraform k8s kubernetes docker helm ansible ci tooling'.split(' ')
+};
+const ROLE_ORDER = ['client','api','cli','worker','core','data','shared','infra'];
+const ROLE_COL = {client:0,api:1,cli:1,worker:1,core:2,data:3,shared:3,infra:3};
+const ROLE_LABEL = {client:'Frontend / UI',api:'API / transport',cli:'CLI / entry',worker:'Worker / jobs',core:'Core logic',data:'Data layer',shared:'Shared / utils',infra:'Infra / tooling'};
+function guessRole(comp, tags, langMix){
+  const segs = comp.path.toLowerCase().split('/').filter(Boolean).slice(-3);
+  const scores = {}; 
+  segs.forEach((seg,i)=>{ const w = i===segs.length-1?2:1; for (const tok of seg.split(/[^a-z0-9]+/)) if (tok) for (const r of ROLE_ORDER) if (ROLE_TOKENS[r].includes(tok)) scores[r]=(scores[r]||0)+w; });
+  let best=null,bs=0; for (const r of ROLE_ORDER) if ((scores[r]||0)>bs){bs=scores[r];best=r;}
+  if (best) return {role:best, guessed:false};
+  const labels = new Set(tags.map(t=>t.label));
+  const uiFrameworks = ['React','Vue','Svelte','Angular','Solid','Preact','Next.js','Nuxt','Astro','SvelteKit','Remix','Gatsby','React Native'];
+  const tot = Object.values(langMix).reduce((a,b)=>a+b,0)||1;
+  const frac = ks => ks.reduce((a,k)=>a+(langMix[k]||0),0)/tot;
+  if (frac(['HTML','CSS','Vue','Svelte','Astro'])>0.6 || uiFrameworks.some(u=>labels.has(u))) return {role:'client', guessed:true};
+  if (frac(['SQL','Prisma'])>0.6) return {role:'data', guessed:true};
+  if (frac(['Terraform'])>0.6) return {role:'infra', guessed:true};
+  if (frac(['Protobuf','GraphQL'])>0.6) return {role:'api', guessed:true};
+  return {role:'core', guessed:true};
+}
+
+/* ---------------- fetch helpers ---------------- */
+function parseRepoInput(s){
+  s = s.trim().replace(/^https?:\/\/(www\.)?github\.com\//,'').replace(/\.git$/,'').replace(/\/+$/,'');
+  let ref = null;
+  const at = s.match(/^([^@]+)@(.+)$/); if (at) { s = at[1]; ref = at[2]; }
+  const tree = s.match(/^([^\/]+)\/([^\/]+)\/tree\/(.+)$/); if (tree) return {owner:tree[1], repo:tree[2], ref:tree[3]};
+  const m = s.match(/^([\w.\-]+)\/([\w.\-]+)/); if (!m) throw new Error('Enter a repo like owner/name or a github.com URL');
+  return {owner:m[1], repo:m[2], ref};
+}
+
+async function analyzeRepo(input, opts = {}, onProgress = ()=>{}){
+  const {owner, repo, ref} = parseRepoInput(input);
+  const token = opts.token || null, budget = opts.budget || 500;
+  const hdr = {Accept:'application/vnd.github+json'}; if (token) hdr.Authorization = 'Bearer '+token;
+  async function ghJson(path){
+    const r = await fetch('https://api.github.com'+path,{headers:hdr});
+    if (r.status===404) throw new Error(token?'Repository or branch not found.':'Repository or branch not found (private repos need a token).');
+    if (r.status===403 || r.status===429) { const reset=r.headers.get('x-ratelimit-reset'); throw new Error('GitHub API rate limit hit'+(reset?' — resets at '+new Date(reset*1000).toLocaleTimeString():'')+'. Add a personal access token (⚙) to continue.'); }
+    if (!r.ok) throw new Error('GitHub API error '+r.status);
+    return r.json();
+  }
+  onProgress({phase:'Fetching repository metadata…', pct:2});
+  const meta = await ghJson(`/repos/${owner}/${repo}`);
+  const branch = ref || meta.default_branch;
+  onProgress({phase:`Reading file tree (${branch})…`, pct:6});
+  const tree = await ghJson(`/repos/${owner}/${repo}/git/trees/${encodeURI(branch)}?recursive=1`);
+  const blobs = tree.tree.filter(e=>e.type==='blob');
+  async function getText(path){
+    try {
+      let r;
+      if (token) r = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${encodeURI(path)}?ref=${encodeURIComponent(branch)}`,{headers:{Accept:'application/vnd.github.raw',Authorization:'Bearer '+token}});
+      else r = await fetch(`https://raw.githubusercontent.com/${owner}/${repo}/${encodeURI(branch)}/${encodeURI(path)}`);
+      if (!r.ok) return null; return await r.text();
+    } catch(e){ return null; }
+  }
+  async function pool(items, n, fn){ let i=0; await Promise.all(Array.from({length:n},async()=>{ while(i<items.length){ const k=i++; await fn(items[k],k); } })); }
+
+  /* files */
+  const files = blobs.map((b,i)=>{ const ext=extOf(b.path); const kind=classify(b.path); return {id:i, path:b.path, size:b.size||0, ext, kind, lang:LANG[ext]||null, comp:-1, imports:new Set(), importedBy:new Set(), externals:new Set(), routes:[], models:[], scanned:false}; });
+  const byPath = new Map(files.map(f=>[f.path,f]));
+  const stats = {totalFiles:files.length, truncated:!!tree.truncated, byKind:{}, totalBytes:0};
+  for (const f of files) { stats.byKind[f.kind]=(stats.byKind[f.kind]||0)+1; stats.totalBytes+=f.size; }
+  const srcFiles = files.filter(f=>f.kind==='source');
+
+  /* manifests & infra files */
+  const manifestFiles = files.filter(f=>(MANIFESTS.has(base(f.path))||/^requirements.*\.txt$/.test(base(f.path))||f.path.endsWith('.csproj')) && !['ignored','test','aux'].includes(f.kind));
+  const composeFiles = files.filter(f=>/(^|\/)(docker-)?compose[\w.\-]*\.ya?ml$/.test(f.path) && f.kind!=='ignored').slice(0,4);
+  const dockerFiles = files.filter(f=>/(^|\/)Dockerfile[\w.\-]*$/.test(f.path) && f.kind!=='ignored').slice(0,15);
+  const wfFiles = files.filter(f=>/^\.github\/workflows\/[^\/]+\.ya?ml$/.test(f.path)).slice(0,20);
+  const envFiles = files.filter(f=>/(^|\/)\.env\.(example|sample|template|dist|local\.example)$|(^|\/)env\.example$/.test(f.path)).slice(0,5);
+  const miscNames = ['Procfile','Makefile','README.md','readme.md','README.rst','vercel.json','netlify.toml','fly.toml','render.yaml','railway.json','app.yaml','serverless.yml','serverless.yaml','skaffold.yaml','Jenkinsfile','.gitlab-ci.yml','cloudbuild.yaml','docker-bake.hcl','wrangler.toml','nx.json','turbo.json','pnpm-workspace.yaml','lerna.json'];
+  const miscFiles = files.filter(f=>miscNames.includes(f.path) || (f.path.split('/').length===2 && miscNames.includes(base(f.path)) && /^(Procfile|Makefile)$/.test(base(f.path))));
+  const infraFiles = files.filter(f=>/\.(tf|tfvars)$/.test(f.path)||/(^|\/)(k8s|kubernetes|helm|charts?|manifests|deploy|deployment|infra|terraform|ansible|\.circleci)\//.test(f.path)&&/\.(ya?ml|tf|json)$/.test(f.path)||/(^|\/)(Chart\.yaml|kustomization\.ya?ml|cdk\.json|template\.ya?ml|pulumi\.[\w]+\.ya?ml)$/.test(f.path));
+
+  onProgress({phase:'Reading manifests, Docker & CI config…', pct:10});
+  const cfgList = [...manifestFiles.slice(0,80), ...composeFiles, ...dockerFiles, ...wfFiles, ...envFiles, ...miscFiles.slice(0,20)];
+  const cfgText = new Map();
+  await pool(cfgList, 10, async f=>{ const t = await getText(f.path); if (t!==null) cfgText.set(f.path,t); });
+
+  const manifests = []; const goMods = []; const workspacePkgs = new Map(); const cargoPkgs = new Map();
+  for (const f of manifestFiles) { const t=cfgText.get(f.path); if(t==null) continue; const m=parseManifest(f.path,t); manifests.push(m); const d=dirOf(f.path);
+    if (m.eco==='go' && m.name) goMods.push({dir:d,module:m.name});
+    if (m.eco==='npm' && m.name) workspacePkgs.set(m.name,d);
+    if (m.eco==='cargo' && m.name) cargoPkgs.set(m.name.replace(/-/g,'_'),d); }
+  goMods.sort((a,b)=>b.module.length-a.module.length);
+  const manifestDirSet = new Set(manifestFiles.filter(f=>COMPONENT_MANIFESTS.has(base(f.path))||f.path.endsWith('.csproj')).map(f=>dirOf(f.path)).filter(d=>d!==''));
+  const srcDirs = new Set(srcFiles.map(f=>dirOf(f.path)));
+  const manifestDirs = [...manifestDirSet].filter(d=>[...srcDirs].some(s=>s===d||s.startsWith(d+'/')));
+
+  /* components */
+  onProgress({phase:'Discovering components…', pct:14});
+  let rawComps = srcFiles.length ? buildComponents(srcFiles, manifestDirs) : [];
+  const comps = rawComps.map((c,i)=>{
+    const label = c.isMisc ? '(misc)' : c.isRest ? (c.path? c.path+'/(files)' : '(root files)') : (c.path||'(root)');
+    const comp = {id:i, path:c.path, label, isRest:!!c.isRest, files:c.files.map(f=>f.id), size:c.files.reduce((a,f)=>a+f.size,0), langs:{}, tags:[], entries:[], endpoints:0, models:0, role:'core', roleGuessed:true, fanIn:0, fanOut:0, services:[], pkg:null, cycle:false};
+    for (const f of c.files) { f.comp=i; if(f.lang) comp.langs[f.lang]=(comp.langs[f.lang]||0)+1; }
+    return comp;
+  });
+  const compOfFile = f => f.comp>=0 ? comps[f.comp] : null;
+
+  /* choose files to scan */
+  const scanExts = srcFiles.filter(f=>SCAN_EXT.has(f.ext) && f.size < 250000);
+  let toScan;
+  if (scanExts.length <= budget) toScan = scanExts;
+  else { // round-robin by component, shallow & small first
+    const per = comps.map(c=>c.files.map(id=>files[id]).filter(f=>SCAN_EXT.has(f.ext)&&f.size<250000).sort((a,b)=>a.path.split('/').length-b.path.split('/').length||a.size-b.size));
+    toScan = []; for (let k=0; toScan.length<budget; k++) { let any=false; for (const l of per) if (k<l.length) { toScan.push(l[k]); any=true; if(toScan.length>=budget)break; } if(!any)break; }
+  }
+  // also scan routing / entry-ish files regardless
+  const extra = srcFiles.filter(f=>!toScan.includes(f) && SCAN_EXT.has(f.ext) && f.size<250000 && (/(^|\/)(main|app|server|index|routes?|urls|wsgi|asgi|manage|program|startup)\.\w+$/.test(f.path) && f.path.split('/').length<=3)).slice(0,60);
+  toScan = toScan.concat(extra);
+  const raw = new Map(); let done = 0;
+  await pool(toScan, 12, async f=>{
+    const t = await getText(f.path); done++;
+    if (done%10===0 || done===toScan.length) onProgress({phase:`Scanning source files (${done}/${toScan.length})…`, pct:16+Math.round(done/toScan.length*66)});
+    if (t==null) return; f.scanned = true; f.loc = t.split('\n').length; raw.set(f.id, extractFile(f,t));
+  });
+
+  /* ---------- resolution ---------- */
+  onProgress({phase:'Resolving dependencies between files…', pct:84});
+  const pathSet = new Set(files.map(f=>f.path));
+  const dirIndex = new Map(); for (const f of srcFiles) { const d=dirOf(f.path); if(!dirIndex.has(d)) dirIndex.set(d,[]); dirIndex.get(d).push(f); }
+  const dirKeys = [...dirIndex.keys()];
+  const pyIdx = new Map(), pyStrip = new Map(), pyTops = new Set();
+  for (const f of files) if (f.ext==='py' && f.kind!=='ignored') {
+    let m = f.path.replace(/\.py$/,'').split('/'); if (m[m.length-1]==='__init__') m.pop(); if(!m.length) continue;
+    const key = m.join('.'); pyIdx.set(key, f); pyTops.add(m[0]);
+    for (let k=1;k<Math.min(m.length,4);k++){ const s=m.slice(k).join('.'); if(s && !pyStrip.has(s)) pyStrip.set(s,f); pyTops.add(m[k]); }
+  }
+  const jvmIdx = new Map(), nsIdx = new Map();
+  for (const f of files) {
+    if (['Java','Kotlin','Scala'].includes(f.lang) && f.kind!=='ignored') { const m=f.path.match(/(?:^|\/)(?:java|kotlin|scala)\/(.+)\.\w+$/); if(m) jvmIdx.set(m[1].replace(/\//g,'.'), f); }
+  }
+  for (const [id,r] of raw) { const f=files[id];
+    if (r.pkg && ['Java','Kotlin','Scala'].includes(f.lang)) jvmIdx.set(r.pkg+'.'+base(f.path).replace(/\.\w+$/,''), f);
+    if (r.pkg && ['Java','Kotlin','Scala'].includes(f.lang)) { if(!nsIdx.has(r.pkg)) nsIdx.set(r.pkg,[]); nsIdx.get(r.pkg).push(f); }
+    if (r.ns && f.lang==='C#') { if(!nsIdx.has(r.ns)) nsIdx.set(r.ns,[]); nsIdx.get(r.ns).push(f); }
+    if (r.pkg && f.lang==='PHP') jvmIdx.set(r.pkg+'\\'+base(f.path).replace(/\.\w+$/,''), f);
+  }
+  const rep = dir => { let list = dirIndex.get(dir); if(!list||!list.length){ const k=dirKeys.find(d=>d.startsWith(dir+'/')); list=k!==undefined?dirIndex.get(k):[]; } if(!list.length) return null;
+    return list.find(f=>/^(index|main|lib|mod|__init__|app)\./.test(base(f.path))) || list.slice().sort((a,b)=>b.size-a.size)[0]; };
+  const tryJs = b => { if (pathSet.has(b) && SOURCE_EXT.has(extOf(b))) return byPath.get(b);
+    const noExt = b.replace(/\.(js|jsx|mjs|cjs)$/,'');
+    for (const e of JS_EXT_TRY) { if (pathSet.has(b+e)) return byPath.get(b+e); if (noExt!==b && pathSet.has(noExt+e)) return byPath.get(noExt+e); }
+    for (const e of JS_EXT_TRY) if (pathSet.has(b+'/index'+e)) return byPath.get(b+'/index'+e);
+    return null; };
+  const pkgNameOf = s => s[0]==='@' ? s.split('/').slice(0,2).join('/') : s.split('/')[0];
+  const nearestPkgDir = p => { let d=dirOf(p); while(true){ if(manifestDirSet.has(d)) return d; if(d==='')return ''; d=dirOf(d);} };
+
+  function resolve(f, spec, r){
+    const lang = f.lang; const L = {internal:[], ext:null};
+    if (['JavaScript','TypeScript','Vue','Svelte','Astro'].includes(lang) || f.ext==='dart') {
+      if (f.ext==='dart') { if (spec.startsWith('package:')) { L.ext=spec.slice(8).split('/')[0]; return L; } if(spec.startsWith('dart:')) return L; const t=tryJs(normPath(dirOf(f.path)+'/'+spec)); if(pathSet.has(normPath(dirOf(f.path)+'/'+spec))) L.internal.push(byPath.get(normPath(dirOf(f.path)+'/'+spec))); return L; }
+      if (spec.startsWith('node:')) return L;
+      if (spec[0]==='.') { const t = tryJs(normPath(dirOf(f.path)+'/'+spec)); if (t) L.internal.push(t); return L; }
+      if (/^(@|~|#)\//.test(spec) || spec.startsWith('src/')) {
+        const rest = spec.replace(/^(@|~|#)\//,''); const pd = nearestPkgDir(f.path);
+        for (const pre of ['', 'src/', 'app/', pd?pd+'/src/':'', pd?pd+'/':'', pd?pd+'/app/':'']) { if (pre==='' && spec.startsWith('src/')) { const t=tryJs(rest); if(t){L.internal.push(t);return L;} continue; } const t = tryJs(pre+rest); if (t) { L.internal.push(t); return L; } }
+        return L;
+      }
+      const pkg = pkgNameOf(spec);
+      if (workspacePkgs.has(pkg)) { const d=workspacePkgs.get(pkg); const sub=spec.slice(pkg.length+1); let t = sub? (tryJs(d+'/'+sub)||tryJs(d+'/src/'+sub)):null; if(!t) t = rep(d+'/src')||rep(d); if (t) L.internal.push(t); return L; }
+      if (NODE_BUILTIN.has(pkg)) return L;
+      // baseUrl-style: 'components/Button'
+      const first = spec.split('/')[0];
+      if (spec.includes('/') && (dirIndex.has('src/'+first) || dirKeys.some(d=>d.startsWith('src/'+first+'/')))) { const t=tryJs('src/'+spec); if(t){L.internal.push(t);return L;} }
+      L.ext = pkg; return L;
+    }
+    if (lang==='Python') {
+      const {dots, mod, names} = spec;
+      if (dots>0) { let d = dirOf(f.path); for (let k=1;k<dots;k++) d = dirOf(d); const baseDir = mod? normPath(d+'/'+mod.replace(/\./g,'/')) : d;
+        const tp = p => pathSet.has(p+'.py')?byPath.get(p+'.py'):pathSet.has(p+'/__init__.py')?byPath.get(p+'/__init__.py'):null;
+        let any=false; for (const n of names) { const t=tp(baseDir+'/'+n); if(t){L.internal.push(t);any=true;} } if(!any){ const t=tp(baseDir); if(t) L.internal.push(t); } return L; }
+      const top = mod.split('.')[0];
+      if (PY_STDLIB.has(top)) return L;
+      const look = k => pyIdx.get(k)||pyStrip.get(k);
+      let any=false; for (const n of names) { const t=look(mod+'.'+n); if(t){L.internal.push(t);any=true;} }
+      if (!any) { const t=look(mod); if(t){L.internal.push(t);any=true;} else { const parts=mod.split('.'); for(let k=parts.length-1;k>0&&!any;k--){ const t2=look(parts.slice(0,k).join('.')); if(t2){L.internal.push(t2);any=true;} } } }
+      if (!any && !pyTops.has(top)) L.ext = top;
+      return L;
+    }
+    if (lang==='Go') {
+      const gm = goMods.find(g=>spec===g.module||spec.startsWith(g.module+'/'));
+      if (gm) { const rel = spec.slice(gm.module.length+1); const t = rep(normPath(gm.dir+'/'+rel)); if (t) L.internal.push(t); return L; }
+      const first = spec.split('/')[0]; if (!first.includes('.')) return L;
+      L.ext = spec; return L;
+    }
+    if (lang==='Rust') {
+      if (spec.mod) { const d=dirOf(f.path), b=base(f.path).replace(/\.rs$/,''); const sib=['mod','main','lib'].includes(b)?d:d+'/'+b;
+        for (const c of [sib+'/'+spec.mod+'.rs', sib+'/'+spec.mod+'/mod.rs']) if (pathSet.has(normPath(c))) { L.internal.push(byPath.get(normPath(c))); break; } return L; }
+      const segs = spec.use.split('::'); const head=segs[0];
+      if (['std','core','alloc','self','super'].includes(head)) return L;
+      if (head==='crate') { const m=f.path.match(/^(.*?\/?src)\//); const root=m?m[1]:'src';
+        for (let k=Math.min(segs.length,4);k>=2;k--) { const p=root+'/'+segs.slice(1,k).join('/'); for (const c of [p+'.rs',p+'/mod.rs']) if (pathSet.has(c)) { L.internal.push(byPath.get(c)); return L; } }
+        return L; }
+      if (cargoPkgs.has(head)) { const t=rep(cargoPkgs.get(head)+'/src'); if(t) L.internal.push(t); return L; }
+      L.ext = head.replace(/_/g,'-'); return L;
+    }
+    if (['Java','Kotlin','Scala'].includes(lang)) {
+      if (spec.startsWith('java.') || spec.startsWith('kotlin.') || spec.startsWith('scala.')) return L;
+      let name = spec;
+      if (name.endsWith('.*')) { const ns=name.slice(0,-2); const list=nsIdx.get(ns); if (list&&list[0]) { L.internal.push(list[0]); return L; } for (const [k,v] of jvmIdx) if (k.startsWith(ns+'.')) { L.internal.push(v); return L; } L.ext = ns.split('.').slice(0,3).join('.'); return L; }
+      for (let k=0;k<3;k++) { const t=jvmIdx.get(name); if (t) { L.internal.push(t); return L; } const i=name.lastIndexOf('.'); if(i<0)break; name=name.slice(0,i); }
+      L.ext = spec.split('.').slice(0,3).join('.'); return L;
+    }
+    if (lang==='C#') { if (spec.startsWith('System')) return L; const list=nsIdx.get(spec); if (list&&list[0]) { L.internal.push(list[0]); return L; } if (/^Microsoft\./.test(spec)) L.ext=spec.toLowerCase().split('.').slice(0,3).join('.'); else if(!spec.includes('.')||true) { const topNs=spec.split('.')[0]; if (![...nsIdx.keys()].some(k=>k.split('.')[0]===topNs)) L.ext=spec.toLowerCase().split('.').slice(0,2).join('.'); } return L; }
+    if (lang==='PHP') { const t=jvmIdx.get(spec); if (t) { L.internal.push(t); return L; } const top=spec.split('\\')[0]; if (![...jvmIdx.keys()].some(k=>k.split('\\')[0]===top)) L.ext = top.toLowerCase()==='illuminate'? 'illuminate' : spec.split('\\').slice(0,2).join('\\').toLowerCase(); return L; }
+    if (lang==='Ruby') { if (spec.rel!==undefined) { const t=normPath(dirOf(f.path)+'/'+spec.rel); for (const c of [t+'.rb',t]) if (pathSet.has(c)) { L.internal.push(byPath.get(c)); break; } } else if (spec.gem) { if (!['json','set','yaml','time','date','net/http','uri','fileutils','securerandom','digest','erb','logger','optparse','open3','tempfile','forwardable','singleton','ostruct','benchmark','bigdecimal','csv','zlib','stringio','pathname','socket','timeout','monitor','pp','English','rbconfig'].includes(spec.gem) && !spec.gem.startsWith('active')&&true) { const first=spec.gem.split('/')[0]; if(![...dirIndex.keys()].some(d=>d.split('/').includes(first))) L.ext = spec.gem.split('/')[0]; } } return L; }
+    if (['C','C++','Objective-C'].includes(lang)) { const rel = normPath(dirOf(f.path)+'/'+spec); if (pathSet.has(rel)) L.internal.push(byPath.get(rel)); else { const hit = files.find(x=>x.path.endsWith('/'+spec)||x.path===spec); if (hit) L.internal.push(hit); } return L; }
+    return L;
+  }
+
+  const fileEdges = []; const compEdges = new Map(); const extPkgs = new Map(); const envVars = new Map(); const routes = []; const models = []; const entries = [];
+  let dbProviders = new Set();
+  for (const [id, r] of raw) {
+    const f = files[id]; const cf = compOfFile(f);
+    for (const spec of r.imports) {
+      const res = resolve(f, spec, r);
+      for (const t of res.internal) {
+        if (t===f) continue; f.imports.add(t.id); t.importedBy.add(f.id); fileEdges.push([f.id,t.id]);
+        const ct = compOfFile(t);
+        if (cf && ct && cf!==ct) { const k=cf.id+'>'+ct.id; let e=compEdges.get(k); if(!e){e={s:cf.id,t:ct.id,w:0,ex:[]};compEdges.set(k,e);} e.w++; if (e.ex.length<8) e.ex.push([f.path,t.path]); }
+      }
+      if (res.ext) { f.externals.add(res.ext); let x=extPkgs.get(res.ext); if(!x){x={name:res.ext,files:0,comps:new Map()};extPkgs.set(res.ext,x);} x.files++; if (cf) x.comps.set(cf.id,(x.comps.get(cf.id)||0)+1); }
+    }
+    for (const rt of r.routes) { if (rt.path.length>200) continue; f.routes.push(rt); routes.push({...rt, file:f.path, comp:f.comp}); if (cf) cf.endpoints++; }
+    for (const m of r.models) { f.models.push(m); models.push({...m,file:f.path,comp:f.comp}); if(cf) cf.models++; }
+    for (const v of r.env) { let e=envVars.get(v); if(!e){e={name:v,files:new Set(),example:null,sources:new Set()};envVars.set(v,e);} e.files.add(f.path); e.sources.add('code'); }
+    if (r.dbProvider) dbProviders.add(r.dbProvider);
+    if (r.entry && cf) entries.push({path:f.path, kind:r.entry, why:'code', comp:f.comp});
+  }
+  // filename-based entry points
+  for (const f of srcFiles) {
+    const b = base(f.path), depth = f.path.split('/').length;
+    let kind = null;
+    if (/^(manage|wsgi|asgi|__main__)\.py$/.test(b)) kind = b==='manage.py'?'cli':'server';
+    else if (b==='main.go' && /(^|\/)cmd\//.test(f.path)) kind='cli';
+    else if (/^(Program|Startup)\.cs$/.test(b)) kind='server';
+    else if (/^(main|lib)\.rs$/.test(b) && b==='main.rs') kind='cli';
+    else if (/^(server|main|app)\.(js|ts|mjs|cjs)$/.test(b) && depth<=3) kind='server';
+    else if (/^index\.(js|ts|mjs|tsx|jsx)$/.test(b) && depth<=2) kind='app';
+    else if (/(^|\/)bin\/[^\/]+$/.test(f.path) && depth<=3) kind='cli';
+    else if (/(^|\/)(pages|app)\/(index|page|layout|_app)\.(tsx|jsx|js|ts|vue)$/.test(f.path)) kind='app';
+    if (kind) entries.push({path:f.path, kind, why:'filename', comp:f.comp});
+  }
+  // next.js style file routes
+  for (const f of files) {
+    let m;
+    if ((m = f.path.match(/(?:^|\/)(?:src\/)?pages\/api\/(.+)\.(?:ts|js|tsx|jsx)$/))) { routes.push({method:'ANY',path:'/api/'+m[1].replace(/\/index$/,'').replace(/\[(\w+)\]/g,':$1'),file:f.path,comp:f.comp,fileRoute:true}); if(f.comp>=0)comps[f.comp].endpoints++; }
+    else if ((m = f.path.match(/(?:^|\/)(?:src\/)?app\/(.*?)\/?route\.(?:ts|js)$/))) { routes.push({method:'ANY',path:'/'+m[1].replace(/\[(\w+)\]/g,':$1'),file:f.path,comp:f.comp,fileRoute:true}); if(f.comp>=0)comps[f.comp].endpoints++; }
+    else if ((m = f.path.match(/(?:^|\/)(?:src\/)?app\/(.*?)\/?page\.(?:tsx|jsx|ts|js)$/))) { routes.push({method:'PAGE',path:'/'+m[1].replace(/\(\w+\)\/?/g,'').replace(/\[(\w+)\]/g,':$1'),file:f.path,comp:f.comp,fileRoute:true}); }
+    else if ((m = f.path.match(/(?:^|\/)(?:src\/)?pages\/(?!api\/)(.+)\.(?:tsx|jsx|vue|svelte)$/)) && !/_app|_document/.test(f.path)) routes.push({method:'PAGE',path:'/'+m[1].replace(/\/?index$/,'').replace(/\[(\w+)\]/g,':$1'),file:f.path,comp:f.comp,fileRoute:true});
+  }
+  const seenE = new Set(); const entriesU = entries.filter(e=>{ if(seenE.has(e.path))return false; seenE.add(e.path); return true; });
+
+  /* ---------- config-derived ---------- */
+  // env examples
+  for (const f of envFiles) { const t=cfgText.get(f.path); if(!t) continue; for (const l of t.split('\n')) { const m=l.match(/^\s*(?:export\s+)?([A-Z][A-Z0-9_]+)\s*=\s*(.*)$/); if(m){ let e=envVars.get(m[1]); if(!e){e={name:m[1],files:new Set(),example:null,sources:new Set()};envVars.set(m[1],e);} e.example=m[2].replace(/^["']|["']$/g,''); e.sources.add(f.path); } } }
+  // compose
+  const composeServices = []; const composeInfo = [];
+  for (const f of composeFiles) {
+    const y = parseYaml(cfgText.get(f.path)||''); const sv = y.services || (y.version?{}:{}); if (!sv || typeof sv!=='object') continue;
+    composeInfo.push(f.path);
+    for (const [name, s0] of Object.entries(sv)) { const s=s0||{};
+      const toArr = v => v==null?[]:Array.isArray(v)?v:typeof v==='object'?Object.keys(v):[v];
+      const envObj = {}; if (Array.isArray(s.environment)) s.environment.forEach(e=>{const [k,...v]=String(e).split('=');envObj[k]=v.join('=');}); else if (s.environment&&typeof s.environment==='object') Object.assign(envObj,s.environment);
+      const buildCtx = typeof s.build==='string'?s.build:(s.build&&s.build.context)||null;
+      composeServices.push({name, file:f.path, image:s.image||null, build:buildCtx, dockerfile:s.build&&s.build.dockerfile||null, ports:toArr(s.ports).map(String), env:envObj, dependsOn:toArr(s.depends_on), volumes:toArr(s.volumes).map(String), command:Array.isArray(s.command)?s.command.join(' '):s.command||null, profiles:toArr(s.profiles)});
+    }
+  }
+  { const merged = new Map(); for (const s of composeServices) { const m = merged.get(s.name); if (!m) merged.set(s.name, s); else { for (const k of ['image','build','dockerfile','command']) if (s[k]) m[k]=s[k]; m.ports=[...new Set(m.ports.concat(s.ports))]; m.dependsOn=[...new Set(m.dependsOn.concat(s.dependsOn))]; m.volumes=[...new Set(m.volumes.concat(s.volumes))]; Object.assign(m.env,s.env); } } composeServices.length=0; composeServices.push(...merged.values()); }
+  for (const s of composeServices) for (const [k,v] of Object.entries(s.env)) { let e=envVars.get(k); if(!e){e={name:k,files:new Set(),example:null,sources:new Set()};envVars.set(k,e);} e.sources.add('compose:'+s.name); if(e.example==null) e.example=v==null?null:String(v); }
+  // dockerfiles
+  const dockerInfo = dockerFiles.map(f=>{ const t=cfgText.get(f.path)||''; const stages=[...t.matchAll(/^FROM\s+(\S+)(?:\s+AS\s+(\S+))?/gim)].map(m=>({image:m[1],name:m[2]||null}));
+    return {path:f.path, stages, expose:[...t.matchAll(/^EXPOSE\s+(.+)$/gim)].flatMap(m=>m[1].split(/\s+/)), cmd:(t.match(/^(?:CMD|ENTRYPOINT)\s+(.+)$/im)||[])[1]||null, entrypoint:(t.match(/^ENTRYPOINT\s+(.+)$/im)||[])[1]||null}; });
+  // workflows
+  const workflows = wfFiles.map(f=>{ const y=parseYaml(cfgText.get(f.path)||''); let on=y.on; const triggers = on==null?[]:typeof on==='string'?[on]:Array.isArray(on)?on:Object.keys(on);
+    const jobs = Object.entries(y.jobs||{}).map(([id,j])=>{ j=j||{}; const steps=Array.isArray(j.steps)?j.steps:[]; return {id, name:j.name||id, runsOn:Array.isArray(j['runs-on'])?j['runs-on'].join(','):(typeof j['runs-on']==='string'?j['runs-on']:''), needs:Array.isArray(j.needs)?j.needs:j.needs?[j.needs]:[], uses:steps.filter(s=>s&&s.uses).map(s=>String(s.uses).split('@')[0]), runs:steps.filter(s=>s&&s.run).map(s=>String(s.run).trim().split('\n')[0]).slice(0,6)}; });
+    return {path:f.path, name:y.name||base(f.path), triggers, jobs}; });
+  // scripts / makefile / procfile
+  const scripts = {}; for (const m of manifests) if (m.extra && m.extra.scripts && Object.keys(m.extra.scripts).length) scripts[m.path] = m.extra.scripts;
+  let makeTargets = []; const mk = cfgText.get('Makefile'); if (mk) makeTargets = [...mk.matchAll(/^([a-zA-Z][\w.\-]*):(?!=)/gm)].map(m=>m[1]).filter(t=>!t.startsWith('.')).slice(0,25);
+  const procfile = cfgText.get('Procfile')||null;
+  const deployTargets = [];
+  const has = n => files.some(f=>f.path===n);
+  if (has('vercel.json')) deployTargets.push('Vercel'); if (has('netlify.toml')) deployTargets.push('Netlify'); if (has('fly.toml')) deployTargets.push('Fly.io'); if (has('render.yaml')) deployTargets.push('Render');
+  if (has('railway.json')) deployTargets.push('Railway'); if (has('Procfile')) deployTargets.push('Heroku-style Procfile'); if (has('app.yaml')) deployTargets.push('Google App Engine'); if (has('wrangler.toml')) deployTargets.push('Cloudflare Workers');
+  if (has('serverless.yml')||has('serverless.yaml')) deployTargets.push('Serverless Framework'); if (infraFiles.some(f=>/\.tf$/.test(f.path))) deployTargets.push('Terraform'); if (infraFiles.some(f=>/(Chart\.yaml|k8s|kubernetes|helm)/i.test(f.path))) deployTargets.push('Kubernetes / Helm');
+  if (has('.gitlab-ci.yml')) deployTargets.push('GitLab CI'); if (has('Jenkinsfile')) deployTargets.push('Jenkins'); if (files.some(f=>f.path.startsWith('.circleci/'))) deployTargets.push('CircleCI'); if (infraFiles.some(f=>/cdk\.json/.test(f.path))) deployTargets.push('AWS CDK');
+  if (workflows.length) deployTargets.push('GitHub Actions'); if (dockerFiles.length||composeFiles.length) deployTargets.push('Docker');
+
+  /* ---------- tech stack & services ---------- */
+  const techStack = new Map(); // label -> {label,cat,sources:Set, comps:Set}
+  const addTech = (t, source, compId) => { let e=techStack.get(t.label); if(!e){e={label:t.label,cat:t.cat,sources:new Set(),comps:new Set()};techStack.set(t.label,e);} e.sources.add(source); if(compId!=null&&compId>=0) e.comps.add(compId); };
+  for (const m of manifests) { const d=dirOf(m.path); const owner = comps.filter(c=>d===''?false:(c.path===d||c.path.startsWith(d+'/'))).map(c=>c.id);
+    for (const dep of m.deps.concat(m.devDeps)) { const t=techFor(dep); if (!t) continue; if (owner.length) owner.forEach(id=>addTech(t,'manifest',id)); else addTech(t,'manifest'); } }
+  for (const x of extPkgs.values()) { const t=techFor(x.name); if(!t) continue; x.tech=t; for (const id of x.comps.keys()) addTech(t,'import',id); if(!x.comps.size) addTech(t,'import'); }
+  for (const s of composeServices) if (s.image) { const hit=DOCKER_IMAGES.find(d=>d[0].test(s.image)); if(hit) { s.tech={label:hit[1],cat:hit[2]}; addTech({label:hit[1],cat:hit[2]},'compose'); } }
+  for (const p of dbProviders) { const lbl={postgresql:'PostgreSQL',mysql:'MySQL',sqlite:'SQLite',mongodb:'MongoDB',sqlserver:'SQL Server',cockroachdb:'CockroachDB'}[p]; addTech({label:lbl,cat:'database'},'prisma'); }
+  for (const e of envVars.values()) if (e.example) { const v=e.example; const hit = /postgres(ql)?(\+\w+)?:\/\//.test(v)?['PostgreSQL','database']:/mysql(\+\w+)?:\/\//.test(v)?['MySQL','database']:/mongodb(\+srv)?:\/\//.test(v)?['MongoDB','database']:/rediss?:\/\//.test(v)?['Redis','cache']:/amqps?:\/\//.test(v)?['RabbitMQ','queue']:null; if (hit) addTech({label:hit[0],cat:hit[1]},'env'); }
+  // services = tech with service category
+  const services = [];
+  for (const t of techStack.values()) if (SERVICE_CATS.has(t.cat)) {
+    const linked = new Map(); // comp -> weight
+    for (const x of extPkgs.values()) if (x.tech && x.tech.label===t.label) for (const [cid,w] of x.comps) linked.set(cid,(linked.get(cid)||0)+w);
+    for (const id of t.comps) if (!linked.has(id)) linked.set(id,1);
+    services.push({id:'x:'+t.label, label:t.label, cat:t.cat, sources:[...t.sources], links:linked, inferred:false, pkgs:[...extPkgs.values()].filter(x=>x.tech&&x.tech.label===t.label).map(x=>x.name)});
+  }
+
+  /* ---------- tags per component ---------- */
+  for (const c of comps) { c.stack=[]; for (const t of techStack.values()) if (t.comps.has(c.id) && !SERVICE_CATS.has(t.cat)) c.stack.push({label:t.label,cat:t.cat}); }
+  for (const x of extPkgs.values()) if (x.tech && !SERVICE_CATS.has(x.tech.cat)) for (const cid of x.comps.keys()) { const c=comps[cid]; if(!c.tags.some(t=>t.label===x.tech.label)) c.tags.push({label:x.tech.label,cat:x.tech.cat}); }
+  for (const c of comps) { c.scannedCount = c.files.filter(id=>files[id].scanned).length; if (!c.tags.length) c.tags = c.stack.filter(t=>['framework','frontend'].includes(t.cat)); }
+
+  /* ---------- roles ---------- */
+  for (const c of comps) {
+    const g = guessRole(c, c.tags.concat(c.stack), c.langs); c.role=g.role; c.roleGuessed=g.guessed;
+    const uiN = c.files.filter(id=>/^(tsx|jsx|vue|svelte|html|css|scss|astro)$/.test(files[id].ext)).length;
+    if (['api','core','cli'].includes(c.role) && uiN/(c.files.length||1)>0.6 && c.stack.concat(c.tags).some(t=>['React','Vue','Svelte','Angular','Solid','Preact','Next.js','Nuxt','Astro','SvelteKit','Remix'].includes(t.label))) { c.role='client'; c.roleGuessed=true; }
+    if (c.isMisc) { c.role='shared'; }
+    const m = manifests.find(m=>dirOf(m.path)===c.path && COMPONENT_MANIFESTS.has(base(m.path))); if (m) c.pkg = {name:m.name, eco:m.eco, description:m.extra&&m.extra.description};
+  }
+  const edgeList = [...compEdges.values()];
+  for (const e of edgeList) { comps[e.s].fanOut++; comps[e.t].fanIn++; }
+  for (const c of comps) { const ents = entriesU.filter(e=>e.comp===c.id); c.entries = ents.map(e=>e.path); }
+  for (const c of comps) if (c.roleGuessed && c.role==='core') {
+    if (c.entries.length && c.fanIn===0) c.role = /server/.test(entriesU.find(e=>e.comp===c.id)?.kind||'')?'api':'cli';
+    else if (c.fanIn>=3 && c.fanOut<=1) c.role='shared';
+  }
+  // cycles (Tarjan)
+  { const adj = comps.map(()=>[]); edgeList.forEach(e=>adj[e.s].push(e.t)); let idx=0; const st=[],on=[],ix=[],low=[]; 
+    const sc = v => { ix[v]=low[v]=idx++; st.push(v); on[v]=true; for (const w of adj[v]) { if (ix[w]===undefined){ sc(w); low[v]=Math.min(low[v],low[w]); } else if (on[w]) low[v]=Math.min(low[v],ix[w]); }
+      if (low[v]===ix[v]) { const comp=[]; let w; do { w=st.pop(); on[w]=false; comp.push(w);} while(w!==v); if (comp.length>1) comp.forEach(i=>comps[i].cycle=true); } };
+    comps.forEach((_,v)=>{ if (ix[v]===undefined) sc(v); }); }
+
+  // infer service links for services with none
+  const pref = {database:['data','core','api'],cache:['data','core','api'],queue:['worker','core','api'],search:['data','core','api'],storage:['core','api','data'],auth:['api','core'],cloud:['core','api','worker'],ai:['core','api'],payments:['core','api'],monitoring:['api','core'],email:['core','worker','api'],realtime:['api','client','core'],gateway:['api','client']};
+  // compose build -> component (needed for inference)
+  for (const s of composeServices) if (s.build) { const ctx = normPath(dirOf(s.file)+'/'+s.build); s.comps = ctx==='' ? comps.filter(c=>c.entries.length).map(c=>c.id) : comps.filter(c=>c.path===ctx||c.path.startsWith(ctx+'/')||ctx.startsWith(c.path+'/')).map(c=>c.id); } else s.comps=[];
+  for (const s of services) if (s.links.size===0) {
+    s.inferred = true;
+    const cs = composeServices.find(x=>x.tech&&x.tech.label===s.label);
+    if (cs) { const deps = composeServices.filter(x=>x.dependsOn.includes(cs.name)&&x.comps.length); const pool = (deps.length?deps:composeServices.filter(x=>x.comps.length)).flatMap(x=>x.comps); pool.slice(0,3).forEach(id=>s.links.set(id,0)); if (s.links.size) continue; }
+    const order = pref[s.cat]||['core','api'];
+    for (const r of order) { const cand = comps.filter(c=>c.role===r && !c.isMisc && c.scannedCount>=2).sort((a,b)=>b.files.length-a.files.length)[0]; if (cand) { s.links.set(cand.id,0); break; } }
+    if (s.links.size===0 && comps[0]) s.links.set(comps.slice().sort((a,b)=>b.files.length-a.files.length)[0].id,0);
+  }
+
+  /* ---------- aggregates ---------- */
+  const langAgg = {}; for (const f of srcFiles) if (f.lang) { const l=langAgg[f.lang]||(langAgg[f.lang]={name:f.lang,files:0,bytes:0}); l.files++; l.bytes+=f.size; }
+  const languages = Object.values(langAgg).sort((a,b)=>b.bytes-a.bytes);
+  const readmeText = cfgText.get('README.md')||cfgText.get('readme.md')||cfgText.get('README.rst')||'';
+  let about = ''; { const paras = readmeText.replace(/<!--[\s\S]*?-->/g,'').replace(/<[^>]+>/g,'').split(/\n\s*\n/).map(p=>p.replace(/!\[[^\]]*\]\([^)]*\)/g,'').replace(/\[([^\]]+)\]\([^)]*\)/g,'$1').replace(/[#*_`>]/g,'').trim()).filter(p=>p.length>60&&!/^(\[|\|)/.test(p)); about=(paras[0]||'').slice(0,500); }
+  const envList = [...envVars.values()].map(e=>({name:e.name,files:[...e.files],example:e.example,sources:[...e.sources]})).sort((a,b)=>a.name.localeCompare(b.name));
+  routes.sort((a,b)=>a.path.localeCompare(b.path));
+  const uniqRoutes=[]; { const seen=new Set(); for (const r of routes) { const k=r.method+' '+r.path+' '+r.file; if(!seen.has(k)){seen.add(k);uniqRoutes.push(r);} } }
+  onProgress({phase:'Done', pct:100});
+  return {
+    repo:{owner,name:repo,branch,url:meta.html_url,description:meta.description,stars:meta.stargazers_count,language:meta.language,license:meta.license&&meta.license.spdx_id,topics:meta.topics||[],pushed:meta.pushed_at,size:meta.size,forks:meta.forks_count,homepage:meta.homepage},
+    stats:{...stats, sourceFiles:srcFiles.length, scanned:raw.size, scanTargets:toScan.length, budget, languages, testFiles:stats.byKind.test||0},
+    files:files.map(f=>({id:f.id,path:f.path,size:f.size,ext:f.ext,kind:f.kind,lang:f.lang,comp:f.comp,scanned:f.scanned,loc:f.loc||0,imports:[...f.imports],importedBy:[...f.importedBy],externals:[...f.externals],routes:f.routes,models:f.models})),
+    comps, edges:edgeList, fileEdges, services:services.map(s=>({...s,links:[...s.links.entries()]})),
+    entries:entriesU, routes:uniqRoutes, models, env:envList,
+    compose:{files:composeInfo, services:composeServices}, docker:dockerInfo, workflows, scripts, makeTargets, procfile, deployTargets,
+    infraFiles:infraFiles.map(f=>f.path).slice(0,60),
+    manifests:manifests.map(m=>({path:m.path,eco:m.eco,name:m.name,deps:m.deps.length,devDeps:m.devDeps.length})),
+    tech:[...techStack.values()].map(t=>({label:t.label,cat:t.cat,sources:[...t.sources],comps:[...t.comps]})),
+    externalPkgs:[...extPkgs.values()].map(x=>({name:x.name,files:x.files,comps:x.comps.size,tech:x.tech?x.tech.label:null})).sort((a,b)=>b.files-a.files).slice(0,80),
+    about
+  };
+}
+//#ANALYZER-END
+
+/* ============================================================
+   Repo Atlas — UI
+   ============================================================ */
+const $ = (s, r=document) => r.querySelector(s);
+const esc = s => String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt = n => n>=1e6?(n/1e6).toFixed(1)+'M':n>=1e4?Math.round(n/1e3)+'k':n>=1e3?(n/1e3).toFixed(1)+'k':String(n);
+const fmtB = n => n>=1048576?(n/1048576).toFixed(1)+' MB':n>=1024?Math.round(n/1024)+' KB':n+' B';
+const ROLE_COLOR = {client:'var(--client)',api:'var(--api)',cli:'var(--cli)',worker:'var(--worker)',core:'var(--core)',data:'var(--data)',shared:'var(--shared)',infra:'var(--infra)',svc:'var(--ext)'};
+const COL_TITLES = ['Frontend / UI','Entry points & API','Core logic','Data · shared · tooling','External systems'];
+const CAT_ICON = {database:'🗄',cache:'⚡',queue:'📨',search:'🔍',storage:'🪣',cloud:'☁',auth:'🔐',ai:'✨',payments:'💳',monitoring:'📈',email:'✉',realtime:'🔌',gateway:'🚪'};
+const CAT_NAME = {framework:'Frameworks',frontend:'Frontend',ui:'UI kits',state:'State & data fetching',api:'APIs & RPC',build:'Build tooling',orm:'ORM / queries',database:'Databases',cache:'Caches',queue:'Queues & jobs',search:'Search',storage:'Storage',cloud:'Cloud SDKs',auth:'Auth',ai:'AI / ML',payments:'Payments',monitoring:'Observability',email:'Email & messaging',realtime:'Realtime',http:'HTTP clients',logging:'Logging',test:'Testing',util:'Utilities',infra:'Infra',gateway:'Gateways'};
+const COMP_COLOR = c => ROLE_COLOR[c.role]||'var(--core)';
+const ghBlob = p => `${A.repo.url}/blob/${A.repo.branch}/${p.split('/').map(encodeURIComponent).join('/')}`;
+const ghTree = p => `${A.repo.url}/tree/${A.repo.branch}/${p.split('/').map(encodeURIComponent).join('/')}`;
+const short = (s,n) => s.length>n ? '…'+s.slice(-(n-1)) : s;
+const lsGet = k => { try { return localStorage.getItem(k); } catch(e){ return null; } };
+const lsSet = (k,v) => { try { v==null?localStorage.removeItem(k):localStorage.setItem(k,v); } catch(e){} };
+
+let A = null;
+const UI = {tab:'overview', sel:null, layout:'layered', showExt:true, drill:null, tree:{}, selFile:null, apiFilter:'', envFilter:'', treeFilter:''};
+
+/* ---------------- derived ---------------- */
+let D = null;
+function derive(){
+  const comps = A.comps;
+  const col = c => ROLE_COL[c.role] ?? 2;
+  const edges = A.edges.map(e=>({...e, back: col(comps[e.t]) < col(comps[e.s])}));
+  const svcEdges = []; A.services.forEach((s,i)=>s.links.forEach(([cid,w])=>svcEdges.push({s:cid,t:'x'+i,w,inferred:s.inferred})));
+  const inc = comps.map(()=>[]), out = comps.map(()=>[]);
+  edges.forEach(e=>{ out[e.s].push(e); inc[e.t].push(e); });
+  D = {edges, svcEdges, inc, out, col};
+}
+function describeComp(c){
+  const langs = Object.entries(c.langs).sort((a,b)=>b[1]-a[1]).slice(0,2).map(x=>x[0]).join(' / ');
+  const p = [];
+  p.push(`${ROLE_LABEL[c.role]}${c.roleGuessed?' (guessed)':''} — ${c.files.length} source file${c.files.length>1?'s':''}${langs?' of '+langs:''}.`);
+  if (c.pkg && c.pkg.name) p.push(`Package “${c.pkg.name}”${c.pkg.description?': '+c.pkg.description:''}.`);
+  if (c.endpoints) p.push(`Defines ${c.endpoints} HTTP endpoint${c.endpoints>1?'s':''}.`);
+  if (c.models) p.push(`Declares ${c.models} data model${c.models>1?'s':''}.`);
+  if (c.fanIn) p.push(`Imported by ${c.fanIn} other component${c.fanIn>1?'s':''}.`);
+  if (c.fanOut) p.push(`Depends on ${c.fanOut}.`);
+  const sv = A.services.filter(s=>s.links.some(l=>l[0]===c.id)); if (sv.length) p.push(`Talks to ${sv.map(s=>s.label).join(', ')}${sv.every(s=>s.inferred)?' (inferred)':''}.`);
+  if (c.entries.length) p.push(`Contains ${c.entries.length} entry point${c.entries.length>1?'s':''}.`);
+  if (c.cycle) p.push('Part of a circular dependency between components.');
+  return p.join(' ');
+}
+
+/* ---------------- graph view ---------------- */
+function GraphView(svg, cb){
+  const NS = 'http://www.w3.org/2000/svg';
+  const mk = (n,a={},p) => { const e=document.createElementNS(NS,n); for (const k in a) e.setAttribute(k,a[k]); if(p)p.appendChild(e); return e; };
+  svg.innerHTML = `<defs>${[['n','var(--edge)'],['o','var(--out)'],['i','var(--in)'],['w','var(--warn)']].map(([id,c])=>`<marker id="a-${id}-${svg.id}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 1 L10 5 L0 9 z" fill="${c}"/></marker>`).join('')}</defs><g class="vp"><g class="lanes"></g><g class="hdr"></g><g class="edges"></g><g class="nodes"></g></g>`;
+  const vp = svg.querySelector('.vp'), gL = svg.querySelector('.lanes'), gH = svg.querySelector('.hdr'), gE = svg.querySelector('.edges'), gN = svg.querySelector('.nodes');
+  const G = {nodes:[], edges:[], mode:'layered', byId:new Map(), view:{x:0,y:0,k:1}, sel:null, nodeEls:new Map(), edgeEls:[]};
+  const mid = id => `url(#a-${id}-${svg.id})`;
+  const apply = () => vp.setAttribute('transform',`translate(${G.view.x} ${G.view.y}) scale(${G.view.k})`);
+  function anchor(n, side){ return side==='r'?{x:n.x+n.w,y:n.y+n.h/2}:{x:n.x,y:n.y+n.h/2}; }
+  function pathFor(e){
+    const s = G.byId.get(e.s), t = G.byId.get(e.t); if(!s||!t) return '';
+    if (G.mode==='force') {
+      const dx=t.x-s.x, dy=t.y-s.y, d=Math.hypot(dx,dy)||1, ux=dx/d, uy=dy/d;
+      const a={x:s.x+ux*(s.r+2),y:s.y+uy*(s.r+2)}, b={x:t.x-ux*(t.r+5),y:t.y-uy*(t.r+5)};
+      const cx=(a.x+b.x)/2-uy*d*0.12, cy=(a.y+b.y)/2+ux*d*0.12;
+      return `M${a.x},${a.y} Q${cx},${cy} ${b.x},${b.y}`;
+    }
+    let a, b;
+    if (t.x > s.x + s.w - 1) { a=anchor(s,'r'); b=anchor(t,'l'); const o=Math.max(40,(b.x-a.x)/2); return `M${a.x},${a.y} C${a.x+o},${a.y} ${b.x-o},${b.y} ${b.x},${b.y}`; }
+    if (Math.abs(t.x-s.x) < 2) { a=anchor(s,'r'); b=anchor(t,'r'); const o=55+Math.abs(b.y-a.y)*0.12; return `M${a.x},${a.y} C${a.x+o},${a.y} ${b.x+o+8},${b.y} ${b.x+6},${b.y}`; }
+    a=anchor(s,'l'); b=anchor(t,'r'); const o=Math.max(40,(a.x-b.x)/2); return `M${a.x},${a.y} C${a.x-o},${a.y} ${b.x+o},${b.y} ${b.x},${b.y}`;
+  }
+  function setPos(n){ const el=G.nodeEls.get(n.id); if(el) el.setAttribute('transform', G.mode==='force'?`translate(${n.x},${n.y})`:`translate(${n.x},${n.y})`); }
+  function updEdges(id){ for (const o of G.edgeEls) if (!id || o.e.s===id || o.e.t===id) { const d=pathFor(o.e); o.line.setAttribute('d',d); o.hit.setAttribute('d',d); } }
+
+  function buildNode(n){
+    const g = mk('g',{class:'node','data-id':n.id}); const col = n.color||'var(--core)';
+    if (G.mode==='force') {
+      if (n.kind==='svc') mk('rect',{class:'bx',x:-n.r,y:-n.r,width:n.r*2,height:n.r*2,rx:7,stroke:col,'stroke-dasharray':'4 3'},g);
+      else if (n.kind==='ghost') mk('circle',{class:'bx',r:n.r,stroke:col,'stroke-dasharray':'3 3'},g);
+      else mk('circle',{class:'bx',r:n.r,stroke:col,style:`fill:color-mix(in srgb,${col} 30%,var(--card))`},g);
+      if (n.kind==='svc') { const t=mk('text',{class:'t1','text-anchor':'middle',y:5},g); t.textContent=n.icon||'●'; }
+      const t=mk('text',{class:'t1','text-anchor':'middle',y:n.r+14},g); t.textContent=short(n.label,26);
+      if (n.sub){ const t2=mk('text',{class:'t2','text-anchor':'middle',y:n.r+26},g); t2.textContent=n.sub; }
+    } else {
+      if (n.kind==='svc' && n.cat==='database') {
+        mk('path',{class:'bx',d:`M0,8 a${n.w/2},8 0 0 1 ${n.w},0 v${n.h-16} a${n.w/2},8 0 0 1 -${n.w},0 z`,stroke:col},g);
+        mk('path',{d:`M0,8 a${n.w/2},8 0 0 0 ${n.w},0`,fill:'none',stroke:col,opacity:.6},g);
+      } else mk('rect',{class:'bx',width:n.w,height:n.h,rx:n.kind==='svc'?n.h/2:10,stroke:col,'stroke-dasharray':n.kind==='svc'||n.kind==='ghost'?'5 3':'none'},g);
+      if (n.kind!=='svc') mk('rect',{x:0,y:0,width:5,height:n.h,rx:2,fill:col,opacity:.9},g);
+      const x0 = n.kind==='svc'?(n.icon?34:16):16;
+      if (n.kind==='svc' && n.icon) { const ic=mk('text',{x:16,y:n.h/2+6,style:'font-size:17px'},g); ic.textContent=n.icon; }
+      const t1=mk('text',{class:'t1',x:x0,y:n.sub?n.h/2-3:n.h/2+4},g); t1.textContent=short(n.label,n.kind==='svc'?22:27);
+      if (n.sub){ const t2=mk('text',{class:'t2',x:x0,y:n.h/2+13},g); t2.textContent=short(n.sub,34); }
+      if (n.badges && n.badges.length){ const b=mk('text',{x:n.w-8,y:15,'text-anchor':'end',style:'font-size:12px'},g); b.textContent=n.badges.join(' '); }
+    }
+    const ti = mk('title',{},g); ti.textContent = n.title||n.label;
+    return g;
+  }
+  function render(){
+    gL.innerHTML=gH.innerHTML=gE.innerHTML=gN.innerHTML=''; G.nodeEls.clear(); G.edgeEls=[];
+    G.byId = new Map(G.nodes.map(n=>[n.id,n]));
+    for (const l of (G.lanes||[])) mk('rect',{class:'lane',x:l.x,y:l.y,width:l.w,height:l.h,rx:14},gL);
+    for (const h of (G.headers||[])) { const t=mk('text',{class:'colhdr',x:h.x,y:h.y},gH); t.textContent=h.text; }
+    const maxw = Math.max(1,...G.edges.map(e=>e.w||0));
+    for (const e of G.edges) {
+      if (!G.byId.has(e.s)||!G.byId.has(e.t)) continue;
+      const g = mk('g',{class:'edge'+(e.back?' back':'')+(e.inferred?' inf':'')},gE);
+      const line = mk('path',{class:'line','stroke-width':(1+Math.log2(1+(e.w||0))*0.7).toFixed(2),'marker-end':mid(e.back?'w':'n')},g);
+      const hit = mk('path',{class:'hit'},g);
+      const ti = mk('title',{},g); ti.textContent = e.title||'';
+      g.addEventListener('click',ev=>{ ev.stopPropagation(); cb.edge&&cb.edge(e); });
+      g.addEventListener('mouseenter',()=>g.classList.add('hov')); g.addEventListener('mouseleave',()=>g.classList.remove('hov'));
+      G.edgeEls.push({e,g,line,hit});
+    }
+    updEdges();
+    for (const n of G.nodes) { const g=buildNode(n); gN.appendChild(g); G.nodeEls.set(n.id,g); setPos(n); wireNode(g,n); }
+    select(G.sel&&G.byId.has(G.sel)?G.sel:null, true);
+  }
+  function wireNode(g,n){
+    let sx,sy,ox,oy,moved=false,down=false;
+    g.addEventListener('pointerdown',ev=>{ ev.stopPropagation(); down=true; moved=false; sx=ev.clientX; sy=ev.clientY; ox=n.x; oy=n.y; g.setPointerCapture(ev.pointerId); });
+    g.addEventListener('pointermove',ev=>{ if(!down) return; const dx=ev.clientX-sx, dy=ev.clientY-sy; if(!moved && Math.hypot(dx,dy)>4) moved=true; if(moved){ n.x=ox+dx/G.view.k; n.y=oy+dy/G.view.k; setPos(n); updEdges(n.id); } });
+    g.addEventListener('pointerup',ev=>{ down=false; if(!moved){ cb.node&&cb.node(n); } });
+  }
+  function select(id, silent){
+    G.sel = id;
+    const up=new Set(), dn=new Set(), dUp=new Set(), dDn=new Set();
+    if (id) {
+      const bfs=(start,dir,set,direct)=>{ const q=[start], seen=new Set([start]); while(q.length){ const x=q.shift(); for(const e of G.edges){ const [from,to]=dir==='dn'?[e.s,e.t]:[e.t,e.s]; if(from===x&&!seen.has(to)){ seen.add(to); set.add(to); if(x===start) direct.add(to); q.push(to);} } } };
+      bfs(id,'dn',dn,dDn); bfs(id,'up',up,dUp);
+    }
+    for (const [nid,el] of G.nodeEls) {
+      el.classList.remove('sel','dim','tdn','tup');
+      if (!id) continue;
+      if (nid===id) el.classList.add('sel'); else if (dDn.has(nid)||dUp.has(nid)) {} else if (dn.has(nid)) el.classList.add('tdn'); else if (up.has(nid)) el.classList.add('tup'); else el.classList.add('dim');
+    }
+    for (const o of G.edgeEls) {
+      const {e,g,line}=o; g.classList.remove('out','in','tr','dim');
+      let m = e.back?'w':'n';
+      if (id) { if (e.s===id){ g.classList.add('out'); m='o'; } else if (e.t===id){ g.classList.add('in'); m='i'; }
+        else if ((dn.has(e.s)&&dn.has(e.t))||(up.has(e.s)&&up.has(e.t))||(dn.has(e.t)&&e.s===id)) g.classList.add('tr'); else g.classList.add('dim'); }
+      line.setAttribute('marker-end',mid(m));
+    }
+  }
+  function fit(){
+    if (!G.nodes.length) return; const r = svg.getBoundingClientRect(); if(!r.width) return;
+    let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+    for (const n of G.nodes){ const w=G.mode==='force'?n.r*2:n.w, h=G.mode==='force'?n.r*2+30:n.h; const nx=G.mode==='force'?n.x-n.r:n.x, ny=G.mode==='force'?n.y-n.r:n.y; x0=Math.min(x0,nx);y0=Math.min(y0,ny-(G.headers?28:0));x1=Math.max(x1,nx+w);y1=Math.max(y1,ny+h); }
+    const pad=50, k=Math.max(.08,Math.min((r.width-pad*2)/(x1-x0),(r.height-pad*2-40)/(y1-y0),1.15));
+    G.view.k=k; G.view.x=(r.width-(x1-x0)*k)/2-x0*k; G.view.y=(r.height-(y1-y0)*k)/2-y0*k+20; apply();
+  }
+  // pan / zoom
+  let pan=null;
+  svg.addEventListener('pointerdown',ev=>{ pan={x:ev.clientX,y:ev.clientY,vx:G.view.x,vy:G.view.y,moved:false}; svg.setPointerCapture(ev.pointerId); svg.classList.add('pan'); });
+  svg.addEventListener('pointermove',ev=>{ if(!pan)return; const dx=ev.clientX-pan.x, dy=ev.clientY-pan.y; if(Math.hypot(dx,dy)>3)pan.moved=true; G.view.x=pan.vx+dx; G.view.y=pan.vy+dy; apply(); });
+  svg.addEventListener('pointerup',()=>{ if(pan&&!pan.moved){ cb.background&&cb.background(); } pan=null; svg.classList.remove('pan'); });
+  svg.addEventListener('wheel',ev=>{ ev.preventDefault(); const r=svg.getBoundingClientRect(); const mx=ev.clientX-r.left,my=ev.clientY-r.top; const f=Math.exp(-ev.deltaY*0.0015); const nk=Math.max(.05,Math.min(3,G.view.k*f)); G.view.x=mx-(mx-G.view.x)*(nk/G.view.k); G.view.y=my-(my-G.view.y)*(nk/G.view.k); G.view.k=nk; apply(); },{passive:false});
+  G.set = (nodes,edges,mode,extra={}) => { G.nodes=nodes; G.edges=edges; G.mode=mode; G.headers=extra.headers; G.lanes=extra.lanes; render(); };
+  G.select=select; G.fit=fit; G.focus=id=>{ const n=G.byId.get(id); if(!n)return; const r=svg.getBoundingClientRect(); const cx=G.mode==='force'?n.x:n.x+n.w/2, cy=G.mode==='force'?n.y:n.y+n.h/2; G.view.x=r.width/2-cx*G.view.k; G.view.y=r.height/2-cy*G.view.k; apply(); };
+  return G;
+}
+
+/* layout helpers */
+function layeredLayout(nodes, edges, colOf, opts={}){
+  const W=opts.w||214, H=opts.h||58, GX=opts.gx||120, GY=opts.gy||16;
+  const cols = [...new Set(nodes.map(colOf))].sort((a,b)=>a-b);
+  const idx = new Map(cols.map((c,i)=>[c,i]));
+  const lists = cols.map(c=>nodes.filter(n=>colOf(n)===c).sort((a,b)=>(b.weight||0)-(a.weight||0)));
+  const pos = new Map(); const setPos=()=>lists.forEach(l=>l.forEach((n,i)=>pos.set(n.id,i)));
+  setPos();
+  for (let pass=0; pass<4; pass++) {
+    const order = pass%2? [...lists].reverse() : lists;
+    for (const l of order) { const bc = n => { const nb=[]; edges.forEach(e=>{ if(e.s===n.id&&pos.has(e.t))nb.push(pos.get(e.t)); if(e.t===n.id&&pos.has(e.s))nb.push(pos.get(e.s)); }); return nb.length? nb.reduce((a,b)=>a+b,0)/nb.length : pos.get(n.id); };
+      const b = new Map(l.map(n=>[n.id,bc(n)])); l.sort((a,c)=>b.get(a.id)-b.get(c.id)); l.forEach((n,i)=>pos.set(n.id,i)); }
+  }
+  const top = 60, MAXR = opts.maxRows||9; let maxH = 0; const headers=[], lanes=[];
+  let xCursor = 40; const spans=[];
+  lists.forEach(l=>{ const subs=Math.max(1,Math.ceil(l.length/MAXR)); const rows=Math.ceil(l.length/subs); l.forEach((n,i)=>{ const sc=Math.floor(i/rows), r=i%rows; n.x=xCursor+sc*(W+40); n.y=top+r*(H+GY); n.w=W; n.h=H; }); maxH=Math.max(maxH,rows*(H+GY)); const width=subs*W+(subs-1)*40; spans.push({x:xCursor,w:width}); xCursor+=width+GX; });
+  spans.forEach((sp,ci)=>{ headers.push({x:sp.x,y:top-24,text:(opts.titles||COL_TITLES)[cols[ci]]||''}); lanes.push({x:sp.x-12,y:top-12,w:sp.w+24,h:maxH+8}); });
+  return {headers, lanes};
+}
+function forceLayout(nodes, edges, W=900, H=600){
+  const n = nodes.length; if(!n) return;
+  nodes.forEach((p,i)=>{ const a=i/n*Math.PI*2; p.x=W/2+Math.cos(a)*W*0.35; p.y=H/2+Math.sin(a)*H*0.35; p.vx=0; p.vy=0; });
+  const idx = new Map(nodes.map((p,i)=>[p.id,i]));
+  const links = edges.map(e=>[idx.get(e.s),idx.get(e.t)]).filter(l=>l[0]!=null&&l[1]!=null);
+  const k = Math.sqrt(W*H/Math.max(n,1))*0.85;
+  for (let it=0; it<320; it++) {
+    const t = 1 - it/320;
+    for (let i=0;i<n;i++) for (let j=i+1;j<n;j++) { const a=nodes[i], b=nodes[j]; let dx=a.x-b.x, dy=a.y-b.y, d2=dx*dx+dy*dy||.01, d=Math.sqrt(d2); const minD=a.r+b.r+26; const f=(k*k/d2)*0.9 + (d<minD?(minD-d)*0.2:0); const fx=dx/d*f, fy=dy/d*f; a.vx+=fx; a.vy+=fy; b.vx-=fx; b.vy-=fy; }
+    for (const [i,j] of links) { const a=nodes[i], b=nodes[j]; const dx=b.x-a.x, dy=b.y-a.y, d=Math.hypot(dx,dy)||.01; const f=(d-k*0.9)*0.035; const fx=dx/d*f, fy=dy/d*f; a.vx+=fx; a.vy+=fy; b.vx-=fx; b.vy-=fy; }
+    for (const p of nodes) { p.vx+=(W/2-p.x)*0.004; p.vy+=(H/2-p.y)*0.004; const sp=Math.hypot(p.vx,p.vy)||1, cap=40*t+2; if(sp>cap){p.vx*=cap/sp;p.vy*=cap/sp;} p.x+=p.vx; p.y+=p.vy; p.vx*=0.5; p.vy*=0.5; }
+  }
+}
+
+/* ---------------- view builders ---------------- */
+function archNodesEdges(){
+  const nodes=[], edges=[];
+  A.comps.forEach(c=>{
+    const langs = Object.entries(c.langs).sort((a,b)=>b[1]-a[1])[0];
+    nodes.push({id:'c'+c.id, kind:'comp', label:c.label, sub:`${c.files.length} files${langs?' · '+langs[0]:''}${c.endpoints?' · '+c.endpoints+' routes':''}`, color:COMP_COLOR(c), role:c.role, cid:c.id,
+      badges:[c.entries.length?'⚡':'', c.cycle?'↻':''].filter(Boolean), weight:c.files.length, r:11+Math.min(24,Math.sqrt(c.files.length)*2.4), title:`${c.label}\n${describeComp(c)}`});
+  });
+  D.edges.forEach(e=>edges.push({s:'c'+e.s,t:'c'+e.t,w:e.w,back:e.back,raw:e,title:`${A.comps[e.s].label} → ${A.comps[e.t].label}\n${e.w} import${e.w>1?'s':''}${e.back?'\n⚠ goes against the usual layer direction':''}`}));
+  if (UI.showExt) {
+    A.services.forEach((s,i)=>{ nodes.push({id:'x'+i, kind:'svc', cat:s.cat, label:s.label, sub:s.cat+(s.inferred?' · inferred':''), icon:CAT_ICON[s.cat], color:'var(--ext)', sidx:i, weight:s.links.length, r:15, title:`${s.label} (${s.cat})\ndetected via ${s.sources.join(', ')}`}); });
+    D.svcEdges.forEach(e=>edges.push({s:'c'+e.s,t:e.t,w:e.w,inferred:e.inferred,title:`${A.comps[e.s].label} → ${A.services[+e.t.slice(1)].label}${e.inferred?' (inferred)':''}`}));
+  }
+  return {nodes,edges};
+}
+
+let GRAPH=null;
+function drawArch(){
+  const {nodes,edges}=archNodesEdges();
+  if (UI.layout==='layered') {
+    const colOf = n => n.kind==='svc'?4:D.col(A.comps[n.cid]);
+    const L = layeredLayout(nodes,edges,colOf);
+    GRAPH.set(nodes,edges,'layered',L);
+  } else {
+    forceLayout(nodes,edges,1000,700); GRAPH.set(nodes,edges,'force');
+  }
+  GRAPH.select(UI.sel); requestAnimationFrame(()=>GRAPH.fit());
+}
+function drawDrill(cid){
+  const c = A.comps[cid]; const inComp = new Set(c.files);
+  const deg = id => A.files[id].imports.length + A.files[id].importedBy.length;
+  const fl = c.files.map(id=>A.files[id]).sort((a,b)=>deg(b.id)-deg(a.id)||b.size-a.size).slice(0,90);
+  const keep = new Set(fl.map(f=>f.id)); const nodes=[], edges=[], ghosts=new Map();
+  fl.forEach(f=>nodes.push({id:'f'+f.id,kind:'file',label:base(f.path),sub:f.routes.length?f.routes.length+' routes':'',color:COMP_COLOR(c),r:7+Math.min(14,Math.sqrt(f.size/200)),title:f.path,fid:f.id}));
+  const seen=new Set();
+  for (const [a,b] of A.fileEdges) { const fa=A.files[a], fb=A.files[b];
+    const ina=keep.has(a), inb=keep.has(b);
+    if (ina&&inb) { const k=a+'>'+b; if(!seen.has(k)){seen.add(k);edges.push({s:'f'+a,t:'f'+b,w:1});} }
+    else if (ina && fb.comp>=0 && fb.comp!==cid) { ghosts.set(fb.comp,1); const k=a+'>g'+fb.comp; if(!seen.has(k)){seen.add(k);edges.push({s:'f'+a,t:'g'+fb.comp,w:1});} }
+    else if (inb && fa.comp>=0 && fa.comp!==cid) { ghosts.set(fa.comp,1); const k='g'+fa.comp+'>'+b; if(!seen.has(k)){seen.add(k);edges.push({s:'g'+fa.comp,t:'f'+b,w:1});} } }
+  for (const g of ghosts.keys()) nodes.push({id:'g'+g,kind:'ghost',label:A.comps[g].label,sub:'other component',color:COMP_COLOR(A.comps[g]),r:18,cid:g,title:A.comps[g].label});
+  forceLayout(nodes,edges,900,650); GRAPH.set(nodes,edges,'force'); requestAnimationFrame(()=>GRAPH.fit());
+}
+
+/* ---------------- drawer ---------------- */
+function selectNode(n){
+  if (n.kind==='comp'||n.kind==='ghost') { UI.sel='c'+n.cid; GRAPH.select(UI.sel); drawerComp(A.comps[n.cid]); }
+  else if (n.kind==='svc') { UI.sel=n.id; GRAPH.select(UI.sel); drawerSvc(A.services[n.sidx]); }
+  else if (n.kind==='file') { drawerFile(A.files[n.fid]); GRAPH.select(n.id); }
+}
+function selectComp(id){ if (UI.drill!=null) { UI.drill=null; drawArch(); } UI.sel='c'+id; GRAPH.select(UI.sel); GRAPH.focus&&GRAPH.focus(UI.sel); drawerComp(A.comps[id]); }
+function pillRole(c){ return `<span class="pill"><i style="background:${COMP_COLOR(c)}"></i>${ROLE_LABEL[c.role]}${c.roleGuessed?' ?':''}</span>`; }
+function compLink(id){ const c=A.comps[id]; return `<a class="link" data-comp="${id}">${esc(c.label)}</a>`; }
+function drawerComp(c){
+  const out = D.out[c.id].slice().sort((a,b)=>b.w-a.w), inc = D.inc[c.id].slice().sort((a,b)=>b.w-a.w);
+  const svcs = A.services.map((s,i)=>({s,i,l:s.links.find(l=>l[0]===c.id)})).filter(x=>x.l);
+  const total = Object.values(c.langs).reduce((a,b)=>a+b,0)||1;
+  const files = c.files.map(id=>A.files[id]); const key = files.slice().sort((a,b)=>(b.importedBy.length-a.importedBy.length)||(b.size-a.size)).slice(0,7);
+  const eps = A.routes.filter(r=>r.comp===c.id).slice(0,6);
+  $('#drawer').innerHTML = `
+   <h4>${esc(c.label)}</h4>
+   <div style="margin:6px 0 10px">${pillRole(c)} ${c.cycle?'<span class="pill" style="border-color:var(--warn)">↻ in a cycle</span>':''}</div>
+   <div class="hint" style="font-size:13px;color:var(--text)">${esc(describeComp(c))}</div>
+   <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+     <select class="btn sm" id="roleSel" title="Reassign this component's layer">${ROLE_ORDER.map(r=>`<option value="${r}"${r===c.role?' selected':''}>${ROLE_LABEL[r]}</option>`).join('')}</select>
+     <button class="btn sm" id="drillBtn">Explore files →</button>
+     ${c.path?`<a class="btn sm" href="${ghTree(c.path)}" target="_blank" rel="noopener">GitHub ↗</a>`:''}
+   </div>
+   ${c.pkg?`<h5>Package</h5><div class="mono">${esc(c.pkg.name||'')} <span class="hint">(${esc(c.pkg.eco)})</span></div>`:''}
+   <h5>Languages</h5><div class="bar">${Object.entries(c.langs).sort((a,b)=>b[1]-a[1]).map(([l,n],i)=>`<i style="width:${n/total*100}%;background:hsl(${(i*57+200)%360} 65% 60%)" title="${l}: ${n}"></i>`).join('')}</div>
+   <div class="hint">${Object.entries(c.langs).sort((a,b)=>b[1]-a[1]).map(([l,n])=>`${l} ${n}`).join(' · ')}</div>
+   ${c.tags.length?`<h5>Built with</h5>${c.tags.map(t=>`<span class="tag fw">${esc(t.label)}</span>`).join('')}`:''}
+   ${c.entries.length?`<h5>Entry points</h5><ul class="clean">${c.entries.slice(0,6).map(p=>`<li>⚡ <a href="${ghBlob(p)}" target="_blank" rel="noopener" class="mono">${esc(p)}</a></li>`).join('')}</ul>`:''}
+   ${eps.length?`<h5>Endpoints (${c.endpoints})</h5><ul class="clean">${eps.map(r=>`<li><span class="method m-${r.method}">${r.method}</span> <span class="mono">${esc(r.path)}</span></li>`).join('')}</ul>`:''}
+   <h5>Depends on (${out.length})</h5>${out.length?`<ul class="clean">${out.map(e=>`<li>${compLink(e.t)} <span class="w">${e.w}×</span><div class="ex">${e.ex.slice(0,2).map(x=>esc(base(x[0]))+' → '+esc(base(x[1]))).join('<br>')}</div></li>`).join('')}</ul>`:'<div class="hint">Nothing inside the repo (leaf).</div>'}
+   <h5>Used by (${inc.length})</h5>${inc.length?`<ul class="clean">${inc.map(e=>`<li>${compLink(e.s)} <span class="w">${e.w}×</span></li>`).join('')}</ul>`:'<div class="hint">Not imported by other components — likely an entry point or unused.</div>'}
+   ${svcs.length?`<h5>Talks to</h5><ul class="clean">${svcs.map(x=>`<li>${CAT_ICON[x.s.cat]||''} <a class="link" data-svc="${x.i}">${esc(x.s.label)}</a> <span class="w">${x.s.inferred?'inferred':x.l[1]+' files'}</span></li>`).join('')}</ul>`:''}
+   <h5>Key files</h5><ul class="clean">${key.map(f=>`<li><a href="${ghBlob(f.path)}" target="_blank" rel="noopener" class="mono">${esc(short(f.path,44))}</a><span class="w">${f.importedBy.length?'used by '+f.importedBy.length:fmtB(f.size)}</span></li>`).join('')}</ul>`;
+  wireDrawer();
+  $('#roleSel').onchange = e => { c.role=e.target.value; c.roleGuessed=false; derive(); drawArch(); drawerComp(c); };
+  $('#drillBtn').onclick = () => { UI.drill=c.id; drawDrill(c.id); drawerDrillHead(c); };
+}
+function drawerDrillHead(c){
+  $('#drawer').innerHTML = `<h4>${esc(c.label)}</h4><div class="hint">File-level view: circles are files (size ∝ bytes), arrows are imports. Dashed circles are other components these files touch.</div><div style="margin:10px 0"><button class="btn sm" id="backBtn">← Back to architecture</button></div><div class="hint">Click a file for details.</div>`;
+  $('#backBtn').onclick = () => { UI.drill=null; drawArch(); drawerComp(c); };
+}
+function drawerSvc(s){
+  const i = A.services.indexOf(s);
+  const x = A.externalPkgs.filter(p=>s.pkgs.includes(p.name));
+  $('#drawer').innerHTML = `<h4>${CAT_ICON[s.cat]||''} ${esc(s.label)}</h4><div style="margin:6px 0 10px"><span class="pill"><i style="background:var(--ext)"></i>${esc(s.cat)}</span> ${s.inferred?'<span class="pill">inferred link</span>':''}</div>
+   <div style="font-size:13px">External system the code talks to. Detected via: <b>${esc(s.sources.join(', '))}</b>.${s.inferred?' No file imports its client directly, so links to components are a best guess based on layer.':''}</div>
+   ${x.length?`<h5>Packages imported</h5>${x.map(p=>`<span class="tag fw">${esc(p.name)} · ${p.files}</span>`).join('')}`:''}
+   <h5>Used by components</h5><ul class="clean">${s.links.map(l=>`<li>${compLink(l[0])}<span class="w">${l[1]?l[1]+' files':'—'}</span></li>`).join('')}</ul>`;
+  wireDrawer();
+}
+function drawerEdge(e){
+  const r = e.raw; if(!r){ return; }
+  $('#drawer').innerHTML = `<h4>${compLink(r.s)} → ${compLink(r.t)}</h4><div style="margin:6px 0">${r.w} import${r.w>1?'s':''}</div>${e.back?'<div class="callout warn">Goes against the usual layer direction (a lower layer importing a higher one). Worth a look if you care about clean layering.</div>':''}
+   <h5>Examples</h5><ul class="clean">${r.ex.map(x=>`<li class="mono" style="font-size:11.5px"><a href="${ghBlob(x[0])}" target="_blank" rel="noopener">${esc(x[0])}</a><br>→ <a href="${ghBlob(x[1])}" target="_blank" rel="noopener">${esc(x[1])}</a></li>`).join('')}</ul>`;
+  wireDrawer();
+}
+function drawerFile(f){
+  const imp = f.imports.map(i=>A.files[i]), by = f.importedBy.map(i=>A.files[i]);
+  $('#drawer').innerHTML = `<h4>${esc(base(f.path))}</h4><div class="mono hint">${esc(f.path)}</div><div style="margin:8px 0"><a class="btn sm" href="${ghBlob(f.path)}" target="_blank" rel="noopener">Open on GitHub ↗</a></div>
+   <div class="hint">${fmtB(f.size)}${f.loc?' · '+f.loc+' lines':''}${f.lang?' · '+f.lang:''}${f.comp>=0?' · in '+esc(A.comps[f.comp].label):''}</div>
+   ${f.routes.length?`<h5>Routes</h5>${f.routes.slice(0,10).map(r=>`<div><span class="method m-${r.method}">${r.method}</span> <span class="mono">${esc(r.path)}</span></div>`).join('')}`:''}
+   ${f.models.length?`<h5>Models</h5>${f.models.map(m=>`<span class="tag fw">${esc(m.name)}</span>`).join('')}`:''}
+   <h5>Imports (${imp.length})</h5><ul class="clean">${imp.slice(0,30).map(x=>`<li class="mono" style="font-size:11.5px">${esc(x.path)}</li>`).join('')||'<li class="hint">none resolved in repo</li>'}</ul>
+   <h5>Imported by (${by.length})</h5><ul class="clean">${by.slice(0,30).map(x=>`<li class="mono" style="font-size:11.5px">${esc(x.path)}</li>`).join('')||'<li class="hint">no one (in scanned files)</li>'}</ul>
+   ${f.externals.length?`<h5>External packages</h5>${f.externals.map(x=>`<span class="tag">${esc(x)}</span>`).join('')}`:''}`;
+}
+function wireDrawer(){
+  document.querySelectorAll('#drawer [data-comp]').forEach(a=>a.onclick=()=>selectComp(+a.dataset.comp));
+  document.querySelectorAll('#drawer [data-svc]').forEach(a=>a.onclick=()=>{ const i=+a.dataset.svc; UI.sel='x'+i; GRAPH.select(UI.sel); GRAPH.focus&&GRAPH.focus(UI.sel); drawerSvc(A.services[i]); });
+}
+function drawerHome(){
+  const hubs = A.comps.filter(c=>c.fanIn>=2).sort((a,b)=>b.fanIn-a.fanIn).slice(0,3);
+  $('#drawer').innerHTML = `<div class="empty"><div style="font-size:30px">🧭</div><b>Click any block</b><p>to see what it is, what it depends on, what depends on it, and the files that matter.</p>
+   <p class="hint">Blue arrows = depends on · orange = used by<br>Red dashed = against layer direction<br>Drag blocks · scroll to zoom · drag background to pan</p>
+   ${hubs.length?`<p class="hint" style="margin-top:20px">Most depended-on:<br>${hubs.map(h=>`<a class="link" data-comp="${h.id}">${esc(h.label)}</a> (${h.fanIn})`).join('<br>')}</p>`:''}</div>`;
+  wireDrawer();
+}
+
+/* ---------------- tabs ---------------- */
+const TABS = [['overview','Overview'],['arch','Architecture'],['flows','Flows'],['api','API & Data'],['runtime','Runtime'],['files','Files'],['export','Export']];
+function showTab(t){
+  UI.tab=t; document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
+  const p=$('#panel'); p.className='panel'+(t==='arch'||t==='files'?' flush':''); p.scrollTop=0;
+  ({overview:renderOverview,arch:renderArch,flows:renderFlows,api:renderApi,runtime:renderRuntime,files:renderFiles,export:renderExport})[t]();
+}
+function insights(){
+  const out=[]; const cs=A.comps;
+  const cyc = cs.filter(c=>c.cycle); if (cyc.length) out.push(['warn',`<b>Circular dependencies:</b> ${cyc.slice(0,6).map(c=>compLink(c.id)).join(', ')}${cyc.length>6?' …':''} import each other (directly or indirectly).`]);
+  const back = D.edges.filter(e=>e.back && cs[e.s].role!=='shared' && cs[e.t].role!=='client'); if (back.length) out.push(['warn',`<b>Layer inversions:</b> ${back.length} dependenc${back.length>1?'ies point':'y points'} “upward”, e.g. ${back.slice(0,3).map(e=>compLink(e.s)+' → '+compLink(e.t)).join('; ')}.`]);
+  const hubs = cs.filter(c=>c.fanIn>=3).sort((a,b)=>b.fanIn-a.fanIn).slice(0,4); if (hubs.length) out.push(['',`<b>Hubs (change with care):</b> ${hubs.map(h=>compLink(h.id)+` (${h.fanIn} dependents)`).join(', ')}.`]);
+  const big = cs.slice().sort((a,b)=>b.files.length-a.files.length)[0]; if (big && cs.length>3 && big.files.length > 0.4*A.stats.sourceFiles) out.push(['',`<b>Large component:</b> ${compLink(big.id)} holds ${Math.round(big.files.length/A.stats.sourceFiles*100)}% of all source files.`]);
+  const orphan = cs.filter(c=>!c.fanIn&&!c.fanOut&&!c.entries.length&&c.scannedCount>0&&!A.services.some(s=>s.links.some(l=>l[0]===c.id))); if (orphan.length) out.push(['',`<b>Isolated components:</b> ${orphan.slice(0,5).map(c=>compLink(c.id)).join(', ')} — no imports in or out (standalone tool, dead code, or loaded dynamically).`]);
+  const ratio = A.stats.sourceFiles? A.stats.testFiles/A.stats.sourceFiles : 0;
+  out.push([ratio<0.1?'warn':'ok',`<b>Tests:</b> ${A.stats.testFiles} test files for ${A.stats.sourceFiles} source files (${ratio.toFixed(2)} ratio).`]);
+  if (A.stats.scanned < A.stats.sourceFiles) out.push(['',`<b>Coverage:</b> import analysis read ${A.stats.scanned} of ${A.stats.sourceFiles} source files. Use “Deep” in the toolbar for larger repos — edge counts are lower bounds.`]);
+  if (A.stats.truncated) out.push(['warn','GitHub truncated the file tree for this very large repo; some files are missing.']);
+  return out;
+}
+function narrative(){
+  const s=A.stats, L=s.languages, tot=L.reduce((a,b)=>a+b.bytes,0)||1; const p=[];
+  if (L.length) p.push(`Written mostly in <b>${L[0].name}</b> (${Math.round(L[0].bytes/tot*100)}%)${L[1]?` with ${L.slice(1,3).map(l=>l.name+' '+Math.round(l.bytes/tot*100)+'%').join(', ')}`:''}.`);
+  const fw = A.tech.filter(t=>['framework','frontend'].includes(t.cat)).map(t=>t.label); if (fw.length) p.push(`Built on <b>${[...new Set(fw)].slice(0,6).join(', ')}</b>.`);
+  p.push(`The code splits into <b>${A.comps.length} components</b>${A.comps.length>1?`: ${ROLE_ORDER.map(r=>[r,A.comps.filter(c=>c.role===r).length]).filter(x=>x[1]).map(x=>x[1]+' '+ROLE_LABEL[x[0]].toLowerCase()).join(', ')}`:''}.`);
+  if (A.entries.length) p.push(`It starts from <b>${A.entries.length}</b> entry point${A.entries.length>1?'s':''} (e.g. <span class="mono">${esc(A.entries[0].path)}</span>).`);
+  if (A.routes.filter(r=>r.method!=='PAGE').length) p.push(`It exposes <b>${A.routes.filter(r=>r.method!=='PAGE').length} HTTP endpoints</b>.`);
+  if (A.services.length) p.push(`It talks to <b>${A.services.map(s=>s.label).slice(0,8).join(', ')}</b>.`);
+  if (A.compose.services.length) p.push(`Docker Compose runs <b>${A.compose.services.length} services</b>.`);
+  if (A.workflows.length) p.push(`CI runs ${A.workflows.length} GitHub Actions workflow${A.workflows.length>1?'s':''}.`);
+  return p.join(' ');
+}
+function renderOverview(){
+  const s=A.stats, r=A.repo, L=s.languages, tot=L.reduce((a,b)=>a+b.bytes,0)||1;
+  const stack = {}; A.tech.forEach(t=>{ (stack[t.cat]=stack[t.cat]||[]).push(t.label); });
+  const catOrder = ['framework','frontend','ui','state','api','orm','database','cache','queue','search','storage','cloud','auth','ai','payments','monitoring','email','realtime','http','build','test','logging','util','gateway','infra'];
+  $('#panel').innerHTML = `<div class="wrap">
+   <div class="callout" style="font-size:15px">${narrative()}</div>
+   ${r.description||A.about?`<p style="color:var(--mute);margin:14px 2px">${esc(r.description||'')}${A.about&&A.about!==r.description?'<br><span style="font-size:13px">'+esc(A.about)+'</span>':''}</p>`:''}
+   <h3>At a glance</h3>
+   <div class="cards">
+    <div class="stat"><b>${fmt(s.totalFiles)}</b><span>files in repo</span></div><div class="stat"><b>${fmt(s.sourceFiles)}</b><span>source files</span></div>
+    <div class="stat"><b>${A.comps.length}</b><span>components</span></div><div class="stat"><b>${D.edges.length}</b><span>component links</span></div>
+    <div class="stat"><b>${A.services.length}</b><span>external systems</span></div><div class="stat"><b>${A.routes.filter(x=>x.method!=='PAGE').length}</b><span>endpoints</span></div>
+    <div class="stat"><b>${A.models.length}</b><span>data models</span></div><div class="stat"><b>${A.entries.length}</b><span>entry points</span></div></div>
+   <div class="two" style="margin-top:6px">
+    <div><h3>Languages</h3><div class="box"><div class="bar" style="height:12px">${L.slice(0,10).map((l,i)=>`<i style="width:${l.bytes/tot*100}%;background:hsl(${(i*57+200)%360} 65% 60%)" title="${l.name}"></i>`).join('')}</div>
+     <div class="legend">${L.slice(0,10).map((l,i)=>`<span><i style="background:hsl(${(i*57+200)%360} 65% 60%)"></i>${l.name} ${Math.round(l.bytes/tot*100)}% · ${l.files} files</span>`).join('')}</div></div>
+     <h3>Layers</h3><div class="box">${ROLE_ORDER.map(role=>{ const cs=A.comps.filter(c=>c.role===role); if(!cs.length) return ''; return `<div style="margin:4px 0"><span class="pill"><i style="background:var(--${role})"></i>${ROLE_LABEL[role]}</span> ${cs.slice(0,8).map(c=>compLink(c.id)).join(' · ')}${cs.length>8?' …':''}</div>`; }).join('')||'<span class="hint">No source components found.</span>'}</div></div>
+    <div><h3>Technology</h3><div class="box">${catOrder.filter(c=>stack[c]).map(c=>`<div style="margin:5px 0"><span class="hint" style="display:inline-block;min-width:120px">${CAT_NAME[c]||c}</span>${stack[c].map(l=>`<span class="tag fw">${esc(l)}</span>`).join('')}</div>`).join('')||'<span class="hint">No well-known dependencies detected.</span>'}</div>
+     <h3>Findings</h3>${insights().map(([k,h])=>`<div class="callout ${k}">${h}</div>`).join('')}</div></div>
+   <div class="two"><div><h3>Entry points <small>where execution starts</small></h3><div class="box"><ul class="clean">${A.entries.slice(0,12).map(e=>`<li>⚡ <a class="mono" href="${ghBlob(e.path)}" target="_blank" rel="noopener">${esc(e.path)}</a> <span class="pill">${e.kind}</span></li>`).join('')||'<li class="hint">None detected (library?).</li>'}</ul></div></div>
+    <div><h3>Most-used external packages</h3><div class="box">${A.externalPkgs.slice(0,16).map(p=>`<span class="tag ${p.tech?'fw':''}" title="${p.files} files">${esc(p.name)} <b>${p.files}</b></span>`).join('')||'<span class="hint">None.</span>'}</div></div></div>
+   <div style="text-align:center;margin:30px 0"><button class="btn pri" id="goArch">Open the architecture map →</button></div></div>`;
+  $('#goArch').onclick=()=>showTab('arch');
+  document.querySelectorAll('#panel [data-comp]').forEach(a=>a.onclick=()=>{ showTab('arch'); setTimeout(()=>selectComp(+a.dataset.comp),50); });
+}
+function renderArch(){
+  if (!A.comps.length) { $('#panel').innerHTML='<div class="wrap"><div class="callout">No source code components were found in this repo (it may be docs, config or assets only).</div></div>'; return; }
+  $('#panel').innerHTML = `<div class="archwrap"><div class="canvas"><svg id="g1"></svg>
+    <div class="toolbar"><div class="grp"><button data-l="layered" class="${UI.layout==='layered'?'on':''}">Layers</button><button data-l="force" class="${UI.layout==='force'?'on':''}">Network</button></div>
+     <label><input type="checkbox" id="extChk" ${UI.showExt?'checked':''}> External systems</label><button class="btn sm" id="fitBtn">Fit</button><input type="search" id="findIn" placeholder="Find component…" list="complist"><datalist id="complist">${A.comps.map(c=>`<option value="${esc(c.label)}">`).join('')}</datalist></div>
+    <div class="keybox"><div class="row"><span><i class="ln" style="border-color:var(--out)"></i>depends on</span><span><i class="ln" style="border-color:var(--in)"></i>used by</span><span><i class="ln" style="border-color:var(--warn);border-top-style:dashed"></i>against layer flow</span><span>⚡ entry · ↻ cycle</span></div></div></div>
+    <aside class="drawer" id="drawer"></aside></div>`;
+  GRAPH = GraphView($('#g1'),{node:selectNode, edge:drawerEdge, background:()=>{ UI.sel=null; GRAPH.select(null); if(UI.drill==null) drawerHome(); }});
+  document.querySelectorAll('.toolbar [data-l]').forEach(b=>b.onclick=()=>{ UI.layout=b.dataset.l; UI.drill=null; document.querySelectorAll('.toolbar [data-l]').forEach(x=>x.classList.toggle('on',x===b)); drawArch(); });
+  $('#extChk').onchange=e=>{ UI.showExt=e.target.checked; drawArch(); };
+  $('#fitBtn').onclick=()=>GRAPH.fit();
+  $('#findIn').onchange=e=>{ const c=A.comps.find(c=>c.label===e.target.value)||A.comps.find(c=>c.label.toLowerCase().includes(e.target.value.toLowerCase())); if(c) selectComp(c.id); };
+  drawArch(); if (UI.sel && UI.sel[0]==='c') drawerComp(A.comps[+UI.sel.slice(1)]); else drawerHome();
+  const qp=new URLSearchParams(location.search); if (qp.has('sel') && !renderArch.done) { renderArch.done=true; const c=A.comps.find(c=>c.label.includes(qp.get('sel'))); if(c){ selectComp(c.id); if(qp.has('drill')){ UI.drill=c.id; drawDrill(c.id); drawerDrillHead(c);} } }
+}
+
+/* flows */
+function computePaths(){
+  const cs=A.comps; const starts = cs.filter(c=>c.entries.length).sort((a,b)=>b.fanOut-a.fanOut);
+  let st = starts.length? starts : cs.filter(c=>c.fanIn===0&&c.fanOut>0).sort((a,b)=>b.fanOut-a.fanOut);
+  st = st.slice(0,6);
+  const svcBy = cs.map(()=>[]); A.services.forEach((s,i)=>s.links.forEach(l=>svcBy[l[0]].push({s,i})));
+  const res=[];
+  for (const start of st) {
+    const paths=[]; const dfs=(cur,path,seen)=>{
+      if (paths.length>600) return;
+      const outs = D.out[cur].slice().sort((a,b)=>b.w-a.w).filter(e=>!seen.has(e.t));
+      if (!outs.length || path.length>=7) { paths.push(path.slice()); return; }
+      for (const e of outs.slice(0,6)) { seen.add(e.t); path.push({id:e.t,edge:e}); dfs(e.t,path,seen); path.pop(); seen.delete(e.t); }
+    };
+    dfs(start.id,[{id:start.id}],new Set([start.id]));
+    const scored = paths.map(p=>{ const last=p[p.length-1].id; const sv=svcBy[last][0]; return {p, sv, score:p.length*2+(sv?3:0)+p.reduce((a,x)=>a+(x.edge?Math.log2(1+x.edge.w):0),0)*0.3}; }).sort((a,b)=>b.score-a.score);
+    const chosen=[]; for (const x of scored) { if (chosen.length>=3) break; if (x.p.length<2 && chosen.length) continue; if (chosen.some(c=>c.p.slice(0,2).map(y=>y.id).join()===x.p.slice(0,2).map(y=>y.id).join() && c.p[c.p.length-1].id===x.p[x.p.length-1].id)) continue; chosen.push(x); }
+    res.push({start, paths:chosen});
+  }
+  return res;
+}
+function renderFlows(){
+  const fl = computePaths();
+  $('#panel').innerHTML = `<div class="wrap"><h3>Execution paths <small>how a request or command travels through the code, derived from real imports</small></h3>
+   <p class="hint">Each walkthrough starts at an entry point and follows the heaviest import chain, ending at the deepest component and the external system it talks to. Click a step to inspect it.</p>
+   ${fl.length? fl.map(f=>`<div class="flow"><div><b style="font-size:15px">From ${compLink(f.start.id)}</b> ${f.start.entries.slice(0,2).map(e=>`<span class="pill mono">${esc(base(e))}</span>`).join(' ')}</div>
+     ${f.paths.map((x,i)=>`<div class="steps" style="margin-top:14px"><div class="hint" style="margin-bottom:6px">Path ${i+1} · ${x.p.length} component${x.p.length>1?'s':''}</div>
+      ${x.p.map((s,j)=>{ const c=cs(s.id); const ex=s.edge&&s.edge.ex[0]; return `<div class="step"><div class="dot" style="background:${COMP_COLOR(c)}">${j+1}</div><div class="body">${j?`<div class="via">imports ×${s.edge.w}${ex?` · <span class="mono">${esc(base(ex[0]))} → ${esc(base(ex[1]))}</span>`:''}</div>`:''}<b data-comp="${c.id}">${esc(c.label)}</b> ${pillRole(c)}<div class="hint">${esc(describeComp(c).split(' — ')[1]||'')}</div></div></div>`; }).join('')}
+      ${x.sv?`<div class="step"><div class="dot" style="background:var(--ext)">${CAT_ICON[x.sv.s.cat]||'●'}</div><div class="body"><div class="via">${x.sv.s.inferred?'likely talks to':'talks to'}</div><b data-svc="${x.sv.i}">${esc(x.sv.s.label)}</b> <span class="pill">${x.sv.s.cat}</span></div></div>`:''}</div>`).join('')}</div>`).join('') : '<div class="callout">No entry points or call chains could be derived.</div>'}</div>`;
+  document.querySelectorAll('#panel [data-comp]').forEach(a=>a.onclick=()=>{ showTab('arch'); setTimeout(()=>selectComp(+a.dataset.comp),50); });
+  document.querySelectorAll('#panel [data-svc]').forEach(a=>a.onclick=()=>{ showTab('arch'); setTimeout(()=>{ const i=+a.dataset.svc; UI.sel='x'+i; GRAPH.select(UI.sel); GRAPH.focus('x'+i); drawerSvc(A.services[i]); },50); });
+  function cs(id){ return A.comps[+String(id).replace(/^c/,'')]; }
+}
+/* node ids in paths are numeric comp ids */
+
+function renderApi(){
+  const routes=A.routes, byMethod={}; routes.forEach(r=>byMethod[r.method]=(byMethod[r.method]||0)+1);
+  const f=UI.apiFilter.toLowerCase();
+  const rs = routes.filter(r=>!f||(r.path+' '+r.file+' '+r.method).toLowerCase().includes(f));
+  const ms = A.models.filter(m=>!f||(m.name+' '+m.file+' '+m.kind).toLowerCase().includes(f));
+  $('#panel').innerHTML = `<div class="wrap"><input class="filter" id="apiF" placeholder="Filter routes & models…" value="${esc(UI.apiFilter)}">
+   <h3>HTTP surface <small>${routes.length} routes${Object.keys(byMethod).length?' · '+Object.entries(byMethod).map(([m,n])=>m+' '+n).join(' · '):''}</small></h3>
+   ${rs.length?`<table><tr><th style="width:70px">Method</th><th>Path</th><th>Component</th><th>Defined in</th></tr>${rs.slice(0,500).map(r=>`<tr><td><span class="method m-${r.method}">${r.method}</span></td><td class="mono">${esc(r.path)}</td><td>${r.comp>=0?compLink(r.comp):''}</td><td><a class="mono" href="${ghBlob(r.file)}" target="_blank" rel="noopener">${esc(short(r.file,52))}</a></td></tr>`).join('')}</table>${rs.length>500?`<p class="hint">Showing 500 of ${rs.length}.</p>`:''}`:'<div class="callout">No HTTP routes detected (supported: Express/Fastify/Koa, Next.js file routes, NestJS, Flask, FastAPI, Django, Spring, ASP.NET, Rails, Laravel, Go routers, Actix/Axum).</div>'}
+   <h3>Data model <small>${A.models.length} tables / entities / models</small></h3>
+   ${ms.length?`<table><tr><th>Name</th><th>Kind</th><th>Component</th><th>Defined in</th></tr>${ms.slice(0,500).map(m=>`<tr><td><b>${esc(m.name)}</b></td><td><span class="pill">${esc(m.kind)}</span></td><td>${m.comp>=0?compLink(m.comp):''}</td><td><a class="mono" href="${ghBlob(m.file)}" target="_blank" rel="noopener">${esc(short(m.file,52))}</a></td></tr>`).join('')}</table>`:'<div class="callout">No ORM models / SQL tables detected.</div>'}</div>`;
+  $('#apiF').oninput=e=>{ UI.apiFilter=e.target.value; const pos=e.target.selectionStart; renderApi(); const i=$('#apiF'); i.focus(); i.setSelectionRange(pos,pos); };
+  document.querySelectorAll('#panel [data-comp]').forEach(a=>a.onclick=()=>{ showTab('arch'); setTimeout(()=>selectComp(+a.dataset.comp),50); });
+}
+
+let RGRAPH=null;
+function renderRuntime(){
+  const cs=A.compose.services, dk=A.docker, wf=A.workflows;
+  const envf=UI.envFilter.toLowerCase(); const env=A.env.filter(e=>!envf||e.name.toLowerCase().includes(envf));
+  $('#panel').innerHTML = `<div class="wrap">
+   <h3>Deploy & tooling signals</h3><div>${A.deployTargets.map(t=>`<span class="pill" style="margin:2px">${esc(t)}</span>`).join('')||'<span class="hint">None detected.</span>'}</div>
+   ${cs.length?`<h3>Docker Compose <small>${A.compose.files.map(esc).join(', ')}</small></h3><div class="box" style="padding:0;height:${Math.max(240,Math.min(520,cs.length*60))}px;position:relative;overflow:hidden"><div class="canvas" style="position:absolute;inset:0"><svg id="g2"></svg></div></div>
+    <table style="margin-top:12px"><tr><th>Service</th><th>Image / build</th><th>Ports</th><th>Depends on</th><th>Runs component</th></tr>${cs.map(s=>`<tr><td><b>${esc(s.name)}</b></td><td class="mono">${esc(s.image||('build: '+s.build))}</td><td class="mono">${esc(s.ports.join(', '))}</td><td>${esc(s.dependsOn.join(', '))}</td><td>${(s.comps||[]).slice(0,3).map(compLink).join(', ')}</td></tr>`).join('')}</table>`:''}
+   ${dk.length?`<h3>Dockerfiles</h3><div class="cards" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr))">${dk.map(d=>`<div class="box"><a class="mono" href="${ghBlob(d.path)}" target="_blank" rel="noopener">${esc(d.path)}</a><div class="hint" style="margin-top:6px">${d.stages.map(s=>esc(s.image)+(s.name?' as <b>'+esc(s.name)+'</b>':'')).join(' → ')}</div>${d.expose.length?`<div>exposes ${d.expose.map(p=>`<code>${esc(p)}</code>`).join(' ')}</div>`:''}${d.cmd?`<div class="mono hint">${esc(d.cmd)}</div>`:''}</div>`).join('')}</div>`:''}
+   ${wf.length?`<h3>CI / CD workflows</h3>${wf.map(w=>`<div class="box" style="margin-bottom:10px"><b>${esc(w.name)}</b> <a class="mono hint" href="${ghBlob(w.path)}" target="_blank" rel="noopener">${esc(w.path)}</a><div style="margin:6px 0">on: ${w.triggers.map(t=>`<span class="pill">${esc(t)}</span>`).join(' ')}</div>
+     ${w.jobs.map(j=>`<div style="margin:6px 0;padding-left:10px;border-left:2px solid var(--line)"><b>${esc(j.name)}</b> <span class="hint">${esc(j.runsOn)}${j.needs.length?' · after '+esc(j.needs.join(', ')):''}</span><div class="mono hint">${j.runs.map(esc).join('<br>')}</div>${j.uses.length?`<div>${j.uses.slice(0,6).map(u=>`<span class="tag">${esc(u)}</span>`).join('')}</div>`:''}</div>`).join('')}</div>`).join('')}`:''}
+   ${Object.keys(A.scripts).length||A.makeTargets.length||A.procfile?`<h3>Commands</h3><div class="two">${Object.entries(A.scripts).slice(0,6).map(([p,s])=>`<div class="box"><div class="hint mono">${esc(p)}</div>${Object.entries(s).slice(0,12).map(([k,v])=>`<div><b class="mono">${esc(k)}</b> <span class="mono hint">${esc(String(v).slice(0,70))}</span></div>`).join('')}</div>`).join('')}${A.makeTargets.length?`<div class="box"><div class="hint">Makefile targets</div>${A.makeTargets.map(t=>`<span class="tag fw">${esc(t)}</span>`).join('')}</div>`:''}${A.procfile?`<div class="box"><div class="hint">Procfile</div><pre class="mono" style="margin:4px 0">${esc(A.procfile)}</pre></div>`:''}</div>`:''}
+   ${A.infraFiles.length?`<h3>Infrastructure-as-code files</h3><div class="box">${A.infraFiles.slice(0,25).map(p=>`<div><a class="mono" href="${ghBlob(p)}" target="_blank" rel="noopener">${esc(p)}</a></div>`).join('')}</div>`:''}
+   <h3>Configuration <small>${A.env.length} environment variables</small></h3><input class="filter" id="envF" placeholder="Filter variables…" value="${esc(UI.envFilter)}">
+   ${env.length?`<table><tr><th>Variable</th><th>Example / default</th><th>Seen in</th></tr>${env.slice(0,300).map(e=>`<tr><td class="mono"><b>${esc(e.name)}</b></td><td class="mono">${esc((e.example||'').slice(0,50))}</td><td class="hint">${esc([...e.sources.filter(s=>s!=='code').map(s=>base(s)),e.files.length?e.files.length+' code file'+(e.files.length>1?'s':''):''].filter(Boolean).join(' · '))}</td></tr>`).join('')}</table>`:'<div class="callout">No environment variables found.</div>'}</div>`;
+  document.querySelectorAll('#panel [data-comp]').forEach(a=>a.onclick=()=>{ showTab('arch'); setTimeout(()=>selectComp(+a.dataset.comp),50); });
+  $('#envF').oninput=e=>{ UI.envFilter=e.target.value; const pos=e.target.selectionStart; renderRuntime(); const i=$('#envF'); i.focus(); i.setSelectionRange(pos,pos); };
+  if (cs.length) {
+    const depth = {}; const names=new Set(cs.map(s=>s.name));
+    const h = (n,seen=new Set())=>{ if(depth[n]!==undefined) return depth[n]; if(seen.has(n)) return 0; seen.add(n); const s=cs.find(x=>x.name===n); const ds=(s?s.dependsOn:[]).filter(d=>names.has(d)); return depth[n]=ds.length?1+Math.max(...ds.map(d=>h(d,seen))):0; };
+    cs.forEach(s=>h(s.name)); const H=Math.max(...Object.values(depth));
+    const nodes = cs.map(s=>{ const kind=s.tech?s.tech.cat:(s.build?'app':'other'); return {id:s.name,kind:s.tech&&SERVICE_CATS.has(s.tech.cat)?'svc':'comp',cat:s.tech&&s.tech.cat,label:s.name,sub:s.image||('build '+s.build),icon:s.tech&&CAT_ICON[s.tech.cat],color:s.tech?'var(--ext)':'var(--core)',weight:1,title:s.name+(s.ports.length?'\nports: '+s.ports.join(', '):'')}; });
+    const edges=[]; cs.forEach(s=>s.dependsOn.forEach(d=>{ if(names.has(d)) edges.push({s:s.name,t:d,w:1,title:s.name+' depends on '+d}); }));
+    RGRAPH = GraphView($('#g2'),{node:()=>{}, edge:()=>{}});
+    const titles = Array.from({length:H+1},(_,i)=>i===0?'Entry / apps':i===H?'Backing services':'Layer '+(i+1));
+    const L=layeredLayout(nodes,edges,n=>H-depth[n.id],{titles,h:56}); RGRAPH.set(nodes,edges,'layered',L); requestAnimationFrame(()=>RGRAPH.fit());
+  }
+}
+
+/* files */
+function buildTree(){
+  const root={name:'',children:new Map(),files:0,path:''};
+  for (const f of A.files) { if (f.kind==='ignored') continue; let n=root; n.files++; const parts=f.path.split('/'); parts.forEach((p,i)=>{ if(i===parts.length-1) { n.children.set(p,{name:p,file:f,path:f.path}); } else { let c=n.children.get(p); if(!c){c={name:p,children:new Map(),files:0,path:parts.slice(0,i+1).join('/')};n.children.set(p,c);} c.files++; n=c; } }); }
+  return root;
+}
+let TREE=null;
+function renderFiles(){
+  if(!TREE) TREE=buildTree();
+  $('#panel').innerHTML = `<div class="filesplit"><div class="tree" id="tree"><div class="fsearch"><input id="tf" placeholder="Search files…" value="${esc(UI.treeFilter)}"></div><div id="trows"></div></div><div class="fdetail" id="fdetail"><div class="hint">Select a file. Colored dots show which architecture component (and layer) owns it.</div></div></div>`;
+  const rows=$('#trows');
+  function row(n,depth){
+    const d=document.createElement('div'); d.className='trow'; d.style.paddingLeft=(6+depth*14)+'px';
+    if (n.file) { const c=n.file.comp>=0?A.comps[n.file.comp]:null; d.innerHTML=`<span style="width:12px"></span><span class="dotc" style="background:${c?COMP_COLOR(c):'var(--line)'}"></span><span>${esc(n.name)}</span><span class="cnt">${fmtB(n.file.size)}</span>`; d.onclick=()=>{ rows.querySelectorAll('.on').forEach(x=>x.classList.remove('on')); d.classList.add('on'); fileDetail(n.file); }; return [d]; }
+    const open = UI.tree[n.path]; d.innerHTML=`<span style="width:12px">${open?'▾':'▸'}</span><span>📁 ${esc(n.name)}</span><span class="cnt">${n.files}</span>`;
+    const holder=document.createElement('div'); if(!open) holder.style.display='none';
+    let built=false; const fill=()=>{ if(built) return; built=true; [...n.children.values()].sort((a,b)=>(!!a.file-!!b.file)||a.name.localeCompare(b.name)).forEach(c=>row(c,depth+1).forEach(x=>holder.appendChild(x))); };
+    if(open) fill();
+    d.onclick=()=>{ UI.tree[n.path]=!UI.tree[n.path]; fill(); holder.style.display=UI.tree[n.path]?'':'none'; d.firstChild.textContent=UI.tree[n.path]?'▾':'▸'; };
+    return [d,holder];
+  }
+  function build(){
+    rows.innerHTML=''; const q=UI.treeFilter.toLowerCase();
+    if (q) { const hits=A.files.filter(f=>f.kind!=='ignored'&&f.path.toLowerCase().includes(q)).slice(0,300); hits.forEach(f=>row({name:f.path,file:f,path:f.path},0).forEach(x=>rows.appendChild(x))); if(!hits.length) rows.innerHTML='<div class="hint" style="padding:10px">No matches.</div>'; }
+    else [...TREE.children.values()].sort((a,b)=>(!!a.file-!!b.file)||a.name.localeCompare(b.name)).forEach(c=>row(c,0).forEach(x=>rows.appendChild(x)));
+  }
+  build();
+  $('#tf').oninput=e=>{ UI.treeFilter=e.target.value; build(); };
+}
+function fileDetail(f){
+  const imp=f.imports.map(i=>A.files[i]), by=f.importedBy.map(i=>A.files[i]);
+  const c=f.comp>=0?A.comps[f.comp]:null;
+  $('#fdetail').innerHTML = `<h3 style="margin-top:0">${esc(base(f.path))}</h3><div class="mono hint">${esc(f.path)}</div>
+   <div style="margin:10px 0;display:flex;gap:8px;flex-wrap:wrap"><a class="btn sm" href="${ghBlob(f.path)}" target="_blank" rel="noopener">Open on GitHub ↗</a>${c?`<button class="btn sm" id="toComp">Show ${esc(short(c.label,30))} in map</button>`:''}</div>
+   <div class="hint">${esc(f.kind)} · ${fmtB(f.size)}${f.loc?' · '+f.loc+' lines':''}${f.lang?' · '+f.lang:''}${f.scanned?'':' · not scanned for imports'}</div>
+   ${f.routes.length?`<h3>Routes</h3>${f.routes.map(r=>`<div><span class="method m-${r.method}">${r.method}</span> <span class="mono">${esc(r.path)}</span></div>`).join('')}`:''}
+   ${f.models.length?`<h3>Models</h3>${f.models.map(m=>`<span class="tag fw">${esc(m.name)}</span>`).join('')}`:''}
+   <div class="two"><div><h3>Imports <small>${imp.length}</small></h3><ul class="clean">${imp.map(x=>`<li class="mono link" data-p="${esc(x.path)}">${esc(x.path)}</li>`).join('')||'<li class="hint">none inside the repo</li>'}</ul></div>
+   <div><h3>Imported by <small>${by.length}</small></h3><ul class="clean">${by.slice(0,60).map(x=>`<li class="mono link" data-p="${esc(x.path)}">${esc(x.path)}</li>`).join('')||'<li class="hint">no one in scanned files</li>'}</ul></div></div>
+   ${f.externals.length?`<h3>External packages</h3>${f.externals.map(x=>`<span class="tag">${esc(x)}</span>`).join('')}`:''}`;
+  if (c) $('#toComp').onclick=()=>{ showTab('arch'); setTimeout(()=>selectComp(c.id),50); };
+  document.querySelectorAll('#fdetail [data-p]').forEach(a=>a.onclick=()=>{ const t=A.files.find(x=>x.path===a.dataset.p); if(t) fileDetail(t); });
+}
+
+/* export */
+const mid_ = s => 'n'+s;
+function mermaid(){
+  const q = s => String(s).replace(/"/g,"'");
+  const lines=['flowchart LR']; const byCol={};
+  A.comps.forEach(c=>{ (byCol[D.col(c)]=byCol[D.col(c)]||[]).push(c); });
+  Object.keys(byCol).sort().forEach(k=>{ lines.push(`  subgraph L${k}["${COL_TITLES[k]}"]`); byCol[k].forEach(c=>lines.push(`    c${c.id}["${q(c.label)}<br/><small>${c.files.length} files</small>"]`)); lines.push('  end'); });
+  if (A.services.length) { lines.push('  subgraph EXT["External systems"]'); A.services.forEach((s,i)=>lines.push(`    x${i}[("${q(s.label)}")]`)); lines.push('  end'); }
+  D.edges.forEach(e=>lines.push(`  c${e.s} ${e.back?'-.->':'-->'}|${e.w}| c${e.t}`));
+  A.services.forEach((s,i)=>s.links.forEach(l=>lines.push(`  c${l[0]} -.-> x${i}`)));
+  return lines.join('\n');
+}
+function markdownReport(){
+  const r=A.repo, s=A.stats; const L=[];
+  L.push(`# ${r.owner}/${r.name} — architecture`,'',`_Generated by Repo Atlas from ${r.url} @ ${r.branch}_`,'',narrative().replace(/<[^>]+>/g,''),'','## Components','','| Component | Layer | Files | Depends on | Used by |','|---|---|---|---|---|');
+  A.comps.forEach(c=>L.push(`| \`${c.label}\` | ${ROLE_LABEL[c.role]} | ${c.files.length} | ${D.out[c.id].map(e=>A.comps[e.t].label).join(', ')||'—'} | ${D.inc[c.id].map(e=>A.comps[e.s].label).join(', ')||'—'} |`));
+  if (A.services.length) { L.push('','## External systems',''); A.services.forEach(x=>L.push(`- **${x.label}** (${x.cat}) — used by ${x.links.map(l=>A.comps[l[0]].label).join(', ')}${x.inferred?' _(inferred)_':''}`)); }
+  if (A.entries.length) { L.push('','## Entry points',''); A.entries.slice(0,15).forEach(e=>L.push(`- \`${e.path}\` (${e.kind})`)); }
+  const rt=A.routes.filter(x=>x.method!=='PAGE'); if (rt.length) { L.push('','## HTTP endpoints',''); rt.slice(0,60).forEach(x=>L.push(`- \`${x.method} ${x.path}\` — ${x.file}`)); }
+  if (A.compose.services.length) { L.push('','## Docker Compose services',''); A.compose.services.forEach(x=>L.push(`- **${x.name}** — ${x.image||'build '+x.build}${x.dependsOn.length?' (depends on '+x.dependsOn.join(', ')+')':''}`)); }
+  L.push('','## Findings',''); insights().forEach(([,h])=>L.push('- '+h.replace(/<[^>]+>/g,'')));
+  L.push('','```mermaid',mermaid(),'```');
+  return L.join('\n');
+}
+function download(name, text, type='text/plain'){ const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([text],{type})); a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000); }
+function renderExport(){
+  const m=mermaid(), md=markdownReport();
+  $('#panel').innerHTML = `<div class="wrap"><h3>Mermaid diagram <small>paste into GitHub README, Notion, mermaid.live…</small></h3><textarea class="out" id="mm" readonly>${esc(m)}</textarea>
+   <div style="margin:8px 0 22px;display:flex;gap:8px"><button class="btn" id="cpm">Copy</button><button class="btn" id="dlm">Download .mmd</button></div>
+   <h3>Markdown architecture report</h3><textarea class="out" id="md" readonly>${esc(md)}</textarea><div style="margin:8px 0 22px;display:flex;gap:8px"><button class="btn" id="cpr">Copy</button><button class="btn" id="dlr">Download .md</button></div>
+   <h3>Raw analysis</h3><p class="hint">Everything the analyzer found, as JSON. Re-open it later with “Load JSON” — no GitHub requests needed.</p><button class="btn" id="dlj">Download JSON</button></div>`;
+  const cp=(id,btn)=>{ $(id).select(); navigator.clipboard&&navigator.clipboard.writeText($(id).value); btn.textContent='Copied ✓'; setTimeout(()=>btn.textContent='Copy',1200); };
+  $('#cpm').onclick=e=>cp('#mm',e.target); $('#cpr').onclick=e=>cp('#md',e.target);
+  $('#dlm').onclick=()=>download(A.repo.name+'-architecture.mmd',m); $('#dlr').onclick=()=>download(A.repo.name+'-architecture.md',md);
+  $('#dlj').onclick=()=>download(A.repo.name+'-atlas.json',JSON.stringify(A),'application/json');
+}
+
+/* ---------------- app shell ---------------- */
+function setProgress(p){ $('#progress i').style.width=p+'%'; }
+function landing(){
+  const recent = JSON.parse(lsGet('atlas.recent')||'[]');
+  $('#main').innerHTML = `<div class="landing"><h1>See how any GitHub repo<br>is built.</h1><p class="lead">Paste a repository and get an interactive map: the components, how they connect, where the entry points, APIs, databases and queues are, and how it runs. Everything is derived from the actual code — nothing leaves your browser except requests to GitHub.</p>
+   <div class="chips" id="ex">${['fastapi/full-stack-fastapi-template','spring-projects/spring-petclinic','gin-gonic/gin','expressjs/express','discourse/discourse','vercel/commerce'].map(r=>`<span class="chip" data-r="${r}">${r}</span>`).join('')}</div>
+   ${recent.length?`<p class="hint" style="margin-top:22px">Recent</p><div class="chips">${recent.map(r=>`<span class="chip" data-r="${esc(r)}">${esc(r)}</span>`).join('')}</div>`:''}
+   <div class="grid3"><div class="feat"><b>🗺 Architecture map</b><span>Layered diagram of components, imports between them, and the external systems they touch. Click anything to trace dependencies.</span></div>
+   <div class="feat"><b>🧭 Execution paths</b><span>Auto-generated walkthroughs from each entry point down through the code to the database or API at the end.</span></div>
+   <div class="feat"><b>🌐 API & data model</b><span>Every HTTP route and ORM model/table, grouped by the component that owns it.</span></div>
+   <div class="feat"><b>🐳 Runtime</b><span>Docker Compose topology, Dockerfiles, CI workflows, env vars and scripts.</span></div>
+   <div class="feat"><b>🔎 Findings</b><span>Cycles, layer inversions, hubs, isolated code and test coverage ratio.</span></div>
+   <div class="feat"><b>📤 Export</b><span>Mermaid diagram, Markdown report and JSON to drop into docs.</span></div></div></div>`;
+  document.querySelectorAll('[data-r]').forEach(c=>c.onclick=()=>{ $('#repoInput').value=c.dataset.r; run(); });
+}
+async function run(){
+  const v=$('#repoInput').value.trim(); if(!v) return;
+  let parsed; try { parsed=parseRepoInput(v); } catch(e){ $('#main').innerHTML=`<div id="status"><div class="err">${esc(e.message)}</div></div>`; return; }
+  $('#main').innerHTML = `<div id="status"><div style="font-size:40px">🛰</div><h3 id="phase" style="margin:10px 0 4px">Starting…</h3><div class="hint">Reading ${esc(parsed.owner+'/'+parsed.repo)} from GitHub — this takes 5–40 seconds depending on size.</div></div>`; setProgress(2);
+  try {
+    const res = await analyzeRepo(v,{token:lsGet('atlas.token'),budget:+$('#depth').value},p=>{ setProgress(p.pct); const el=$('#phase'); if(el) el.textContent=p.phase; });
+    const rec=[parsed.owner+'/'+parsed.repo, ...JSON.parse(lsGet('atlas.recent')||'[]')].filter((x,i,a)=>a.indexOf(x)===i).slice(0,6); lsSet('atlas.recent',JSON.stringify(rec));
+    try { history.replaceState(null,'','#'+parsed.owner+'/'+parsed.repo+(parsed.ref?'@'+parsed.ref:'')); } catch(e){}
+    open_(res);
+  } catch(e) { setProgress(0); $('#main').innerHTML=`<div id="status"><div style="font-size:40px">⚠️</div><div class="err"><b>Couldn't analyze that repo.</b><p>${esc(e.message)}</p></div></div>`; console.error(e); }
+  setTimeout(()=>setProgress(0),600);
+}
+function open_(res){
+  A=res; TREE=null; UI.sel=null; UI.drill=null; UI.tree={}; UI.treeFilter=''; UI.apiFilter=''; UI.envFilter='';
+  // rehydrate Map-ish fields after JSON
+  A.services.forEach(s=>{ if(!Array.isArray(s.links)) s.links=Object.entries(s.links).map(([k,v])=>[+k,v]); });
+  derive(); const r=A.repo;
+  $('#main').innerHTML = `<div class="repohead"><h2><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.owner)}/<b>${esc(r.name)}</b></a></h2><div class="meta"><span>⎇ ${esc(r.branch)}</span>${r.stars!=null?`<span>★ ${fmt(r.stars)}</span>`:''}${r.language?`<span>${esc(r.language)}</span>`:''}${r.license&&r.license!=='NOASSERTION'?`<span>${esc(r.license)}</span>`:''}${r.pushed?`<span>updated ${esc(r.pushed.slice(0,10))}</span>`:''}</div><div class="spacer"></div><button class="btn sm" id="shareBtn">Copy link</button></div>
+   <nav class="tabs">${TABS.map(([k,l])=>`<button data-t="${k}">${l}</button>`).join('')}</nav><div class="panel" id="panel"></div>`;
+  document.querySelectorAll('nav.tabs button').forEach(b=>b.onclick=()=>showTab(b.dataset.t));
+  $('#shareBtn').onclick=e=>{ navigator.clipboard&&navigator.clipboard.writeText(location.href); e.target.textContent='Copied ✓'; setTimeout(()=>e.target.textContent='Copy link',1200); };
+  const qt=new URLSearchParams(location.search).get('tab'); showTab(TABS.some(t=>t[0]===qt)?qt:'overview');
+}
+/* wiring */
+$('#goform').onsubmit=e=>{ e.preventDefault(); run(); };
+$('#themeBtn').onclick=()=>{ const r=document.documentElement; const cur=r.dataset.theme|| (matchMedia('(prefers-color-scheme:light)').matches?'light':'dark'); r.dataset.theme=cur==='light'?'dark':'light'; lsSet('atlas.theme',r.dataset.theme); if(A&&UI.tab==='arch') drawArch(); };
+{ const th=lsGet('atlas.theme'); if(th) document.documentElement.dataset.theme=th; }
+$('#tokenBtn').onclick=()=>{ $('#tokenInput').value=lsGet('atlas.token')||''; $('#tokenDlg').showModal(); };
+$('#tokenDlg').addEventListener('close',()=>{ const v=$('#tokenDlg').returnValue; if(v==='save') lsSet('atlas.token',$('#tokenInput').value.trim()||null); if(v==='clear') lsSet('atlas.token',null); $('#tokenBtn').textContent=lsGet('atlas.token')?'⚙ Token ✓':'⚙ Token'; });
+$('#tokenBtn').textContent=lsGet('atlas.token')?'⚙ Token ✓':'⚙ Token';
+$('#loadJson').onclick=()=>$('#fileIn').click();
+$('#fileIn').onchange=async e=>{ const f=e.target.files[0]; if(!f)return; try { open_(JSON.parse(await f.text())); } catch(err){ alert('Could not read that file: '+err.message); } };
+window.addEventListener('resize',()=>{ if(GRAPH&&UI.tab==='arch') GRAPH.fit(); });
+{ const h=decodeURIComponent(location.hash.slice(1)); if(h){ $('#repoInput').value=h; run(); } else landing(); }
+
+</script>
+</body>
+</html>
