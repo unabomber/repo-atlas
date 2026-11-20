@@ -96,7 +96,7 @@ ul.clean{list-style:none;margin:0;padding:0}ul.clean li{padding:5px 0;border-bot
 .node.dim{opacity:.18}.node.tdn,.node.tup{opacity:.7}
 .node.sel .bx{stroke-width:3;filter:drop-shadow(0 0 8px var(--acc))}
 .edge .line{fill:none;stroke:var(--edge);opacity:.5}.edge .hit{fill:none;stroke:transparent;stroke-width:12;cursor:pointer}
-.edge.k-extends .line{stroke:var(--acc);opacity:.9}.edge.k-implements .line{stroke:var(--acc);stroke-dasharray:6 4;opacity:.9}.edge.k-uses .line{opacity:.3}.edge.k-call .line{stroke:var(--acc);opacity:.6}.edge.k-self .line{opacity:.3;stroke-dasharray:2 3}
+.edge.k-extends .line{stroke:var(--acc);opacity:.9}.edge.k-implements .line{stroke:var(--acc);stroke-dasharray:6 4;opacity:.9}.edge.k-uses .line{opacity:.3}.edge.k-call .line{stroke:var(--acc);opacity:.6}.edge.k-self .line{opacity:.3;stroke-dasharray:2 3}.edge.k-api .line{stroke:var(--acc);stroke-dasharray:8 5;opacity:.85}
 .grp2{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}.grp2 button{background:none;border:0;padding:5px 12px;cursor:pointer;color:var(--mute)}.grp2 button.on{background:var(--acc);color:#fff}.grp2 button:disabled{opacity:.4;cursor:default}
 .edge.back .line{stroke:var(--warn);stroke-dasharray:5 4;opacity:.7}.edge.inf .line{stroke-dasharray:3 4}
 .edge.out .line{stroke:var(--out);opacity:1}.edge.in .line{stroke:var(--in);opacity:1}.edge.tr .line{opacity:.8}
@@ -347,6 +347,66 @@ const PY_STDLIB = new Set('os sys re json math time datetime typing collections 
 const JS_EXT_TRY = ['.ts','.tsx','.js','.jsx','.mjs','.cjs','.vue','.svelte','.astro'];
 
 function stripJsComments(t){ return t.replace(/\/\*[\s\S]*?\*\//g,'').replace(/^\s*\/\/.*$/gm,''); }
+
+/* ---------- client-side HTTP calls (frontend → backend API) ---------- */
+const NOT_HTTP_RECV = new Set(['app','router','server','fastify','route','routes','r','v1','v2','express','map','cache','headers','params','searchparams','formdata','storage','localstorage','sessionstorage','object','reflect','weakmap','store','config','env','process','os','path','sys','dict']);
+function normUrl(raw){
+  let s = String(raw).trim(), host = null;
+  const m = s.match(/^(?:https?:)?\/\/([^\/?#]+)(.*)$/i);
+  if (m) { host = m[1]; s = m[2] || '/'; }
+  s = s.replace(/^\$\{[^}]*\}(?=\/|$)/, '').replace(/^\{[^}]*\}(?=\/)/, '');
+  s = s.replace(/\$\{[^}]*\}/g, ':p').replace(/\{[^}]*\}/g, ':p').split(/[?#]/)[0];
+  if (s[0] !== '/') return null;
+  s = s.replace(/\/{2,}/g, '/'); if (s.length > 1) s = s.replace(/\/$/, '');
+  if (s.length > 160 || /\s/.test(s)) return null;
+  return {path: s, host};
+}
+function extractHttpCalls(f, text){
+  const out = [], seen = new Set(); const lang = f.lang;
+  const lineAt = i => { let n = 1; for (let k = text.indexOf('\n'); k !== -1 && k < i; k = text.indexOf('\n', k + 1)) n++; return n; };
+  const push = (method, raw, idx) => {
+    if (out.length >= 120) return; const u = normUrl(raw); if (!u) return;
+    method = (method || 'GET').toUpperCase(); if (!/^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)$/.test(method)) method = 'ANY';
+    const k = method + ' ' + u.path + ' ' + (u.host || ''); if (seen.has(k)) return; seen.add(k);
+    out.push({method, path: u.path, host: u.host, line: lineAt(idx)});
+  };
+  const LIT = String.raw`(?:[\w$.\[\]()]+\s*\+\s*)?(?<q>['"` + '`' + String.raw`])(?<u>(?:(?!\k<q>)[^\\\n]|\\.)*)\k<q>`;
+  const winMethod = (i, back) => { const w = text.slice(Math.max(0, i - (back || 0)), i + 260); const m = w.match(/\b(?:method|type)\s*:\s*['"`](\w+)['"`]/i); return m ? m[1] : null; };
+  if (['JavaScript','TypeScript','Vue','Svelte','Astro'].includes(lang)) {
+    let t = text;
+    const consts = new Map();
+    for (const m of t.matchAll(/\b(?:const|let|var|final|static)\s+([A-Za-z_$][\w$]*)\s*(?::\s*string\s*)?=\s*(?:`([^`\n]*)`|'([^'\n]*)'|"([^"\n]*)")/g)) { const v = m[2] ?? m[3] ?? m[4]; if (/^(?:https?:)?\/\/|^\/|^\$\{/.test(v) && !consts.has(m[1])) consts.set(m[1], v); }
+    if (consts.size) {
+      for (const [n, v] of consts) { const re = new RegExp(String.raw`(\(\s*)` + n.replace(/\$/g, '\\$') + String.raw`(?=\s*[,)+])`, 'g'); t = t.replace(re, (_, a) => a + JSON.stringify(v)); t = t.split('${' + n + '}').join(v.replace(/\$\{/g, '$\u0000{')); }
+      t = t.replace(/\u0000/g, '');
+      for (let k = 0; k < 3; k++) t = t.replace(/(["'`])([^"'`\n]*)\1\s*\+\s*(["'`])([^"'`\n]*)\3/g, (_, q1, a, q3, c) => '"' + a + c + '"');
+    }
+    const U = m => { const u = m.groups.u, e = m.index + m[0].length; return /^\s*\+\s*(?!['"`])[\w$(]/.test(t.slice(e, e + 30)) ? u + (u.endsWith('/') ? ':p' : '/:p') : u; };
+    const winMethod = (i, back) => { const w = t.slice(Math.max(0, i - (back || 0)), i + 260); const mm = w.match(/\b(?:method|type)\s*:\s*['"`](\w+)['"`]/i); return mm ? mm[1] : null; };
+    for (const m of t.matchAll(new RegExp(String.raw`(?<![\w$.])(?:fetch|\$fetch|ofetch|useFetch|useSWR|useSWRImmutable)\s*(?:<[^>()]*>)?\(\s*` + LIT, 'g'))) push(winMethod(m.index + m[0].length), U(m), m.index);
+    for (const m of t.matchAll(new RegExp(String.raw`([\w$][\w$.]*?)\s*\.\s*(get|post|put|patch|delete|head|options|request)\s*(?:<[^>()]*>)?\(\s*` + LIT, 'g'))) {
+      const last = m[1].split('.').pop().toLowerCase(); if (NOT_HTTP_RECV.has(last)) continue;
+      push(m[2] === 'request' ? winMethod(m.index + m[0].length) : m[2], U(m), m.index);
+    }
+    for (const m of t.matchAll(new RegExp(String.raw`(?<![\w$.])(?:axios|\$http|\$|ky|got|superagent)\s*(?:<[^>()]*>)?\(\s*` + LIT, 'g'))) push(winMethod(m.index + m[0].length), U(m), m.index);
+    for (const m of t.matchAll(/\.\s*(get|post|put|patch|delete|head|options)\s*(?:<[^()]{0,400}?>)?\s*\(\s*\{/g)) { const w = t.slice(m.index + m[0].length, m.index + m[0].length + 600); const u = w.match(new RegExp(String.raw`\burl\s*:\s*` + LIT)); if (u) push(m[1], u.groups.u, m.index); }
+    for (const m of t.matchAll(new RegExp(String.raw`\burl\s*:\s*` + LIT, 'g'))) { const meth = winMethod(m.index, 220); if (meth) push(meth, U(m), m.index); }
+    for (const m of t.matchAll(new RegExp(String.raw`\.open\(\s*['"](GET|POST|PUT|PATCH|DELETE)['"]\s*,\s*` + LIT, 'g'))) push(m[1], U(m), m.index);
+  } else if (lang === 'Python') {
+    for (const m of text.matchAll(/\b([\w.]*?(?:requests|httpx|client|session|http|api|aiohttp)\w*)\.(get|post|put|patch|delete|head|request)\(\s*(?:\w+\s*,\s*)?f?(['"])([^'"\n]*)\3/gi)) {
+      const meth = m[2].toLowerCase() === 'request' ? ((text.slice(m.index, m.index + m[0].length).match(/\(\s*['"](\w+)['"]/) || [])[1]) : m[2]; if (m[2].toLowerCase() === 'request') continue; push(meth, m[4], m.index);
+    }
+  } else if (lang === 'Go') {
+    for (const m of text.matchAll(/\bhttp\.(Get|Post|Head|PostForm)\(\s*"([^"\n]*)"/g)) push(m[1] === 'PostForm' ? 'POST' : m[1], m[2], m.index);
+    for (const m of text.matchAll(/\bhttp\.NewRequest(?:WithContext)?\(\s*(?:ctx\s*,\s*)?(?:http\.Method(\w+)|"(\w+)")\s*,\s*"([^"\n]*)"/g)) push(m[1] || m[2], m[3], m.index);
+  } else if (['Java','Kotlin','Scala'].includes(lang)) {
+    for (const m of text.matchAll(/\b\w*(?:[rR]estTemplate|[wW]ebClient|[rR]estClient|[hH]ttpClient)\w*\s*\.\s*(getForObject|getForEntity|postForObject|postForEntity|postForLocation|put|delete|patchForObject)\(\s*"([^"\n]*)"/g)) push(/^get/.test(m[1]) ? 'GET' : /^post/.test(m[1]) ? 'POST' : /^patch/.test(m[1]) ? 'PATCH' : m[1], m[2], m.index);
+    for (const m of text.matchAll(/\.\s*(get|post|put|patch|delete)\(\s*\)\s*\.\s*uri\(\s*"([^"\n]*)"/g)) push(m[1], m[2], m.index);
+  } else if (['C#','Visual Basic'].includes(lang)) {
+    for (const m of text.matchAll(/\.\s*(Get|Post|Put|Patch|Delete)(?:Async|FromJsonAsync|AsJsonAsync)\s*(?:<[^>()]*>)?\(\s*\$?"([^"\n]*)"/g)) push(m[1], m[2], m.index);
+  }
+  return out;
+}
 function extractFile(f, text){
   const r = {imports:[], routes:[], models:[], env:[], entry:null, pkg:null, ns:null};
   const lang = f.lang, ext = f.ext;
@@ -360,7 +420,9 @@ function extractFile(f, text){
     for (const m of t.matchAll(/\bprocess\.env\.([A-Z][A-Z0-9_]{2,})/g)) r.env.push(m[1]);
     for (const m of t.matchAll(/\bimport\.meta\.env\.([A-Z][A-Z0-9_]{2,})/g)) r.env.push(m[1]);
     for (const m of t.matchAll(/\b(?:app|router|server|api|route|fastify|r|routes|v1|v2)\.(get|post|put|patch|delete|all|head|options)\s*\(\s*(['"`])([^'"`\n]+)\2/g)) if (/^[\/*]/.test(m[3])) r.routes.push({method:m[1].toUpperCase(),path:m[3]});
-    for (const m of t.matchAll(/@(Get|Post|Put|Patch|Delete)\(\s*['"`]?([^'"`)\n]*)['"`]?\s*\)/g)) r.routes.push({method:m[1].toUpperCase(),path:'/'+m[2].replace(/^\//,''),nest:true});
+    { const cp=(t.match(/@Controller\(\s*['"`]([^'"`]*)['"`]/)||[])[1]||''; for (const m of t.matchAll(/@(Get|Post|Put|Patch|Delete)\(\s*['"`]?([^'"`)\n]*)['"`]?\s*\)/g)) r.routes.push({method:m[1].toUpperCase(),path:('/'+cp.replace(/^\/|\/$/g,'')+'/'+m[2].replace(/^\//,'')).replace(/\/+/g,'/').replace(/(.)\/$/,'$1'),nest:true}); }
+    for (const m of t.matchAll(/\b(?:app|router|server|api|\w*[rR]outer|\w*Routes)\.route\(\s*(['"`])(\/[^'"`]*)\1\s*\)/g)) { const seg = t.slice(m.index + m[0].length, m.index + m[0].length + 500).split(/;|\n\s*\n/)[0]; for (const c of seg.matchAll(/^\s*\.\s*(get|post|put|patch|delete|all)\s*\(|\)\s*\.\s*(get|post|put|patch|delete|all)\s*\(/g)) r.routes.push({method:(c[1]||c[2]).toUpperCase(),path:m[2]}); }
+    r.mounts = []; for (const m of t.matchAll(/\b(?:app|router|server|api|\w*[rR]outer|\w*Routes)\.use\(\s*(['"`])(\/[^'"`]*)\1\s*,\s*(?:[\w$.()]+\s*,\s*)*?(?:require\(\s*['"]([^'"]+)['"]\s*\)|([\w$]+))\s*\)/g)) { let spec = m[3]; if (!spec && m[4]) { const im = t.match(new RegExp(String.raw`(?:import\s+(?:\*\s+as\s+)?` + m[4].replace(/\$/g,'\\$') + String.raw`\b[^'"]*from\s*|\b` + m[4].replace(/\$/g,'\\$') + String.raw`\s*=\s*require\(\s*)['"]([^'"]+)['"]`)); spec = im && im[1]; } if (spec) r.mounts.push({prefix: m[2], spec}); }
     for (const m of t.matchAll(/@Entity\([^)]*\)\s*(?:export\s+)?class\s+(\w+)/g)) r.models.push({name:m[1],kind:'TypeORM entity'});
     for (const m of t.matchAll(/mongoose\.model(?:<[^>]*>)?\(\s*['"](\w+)/g)) r.models.push({name:m[1],kind:'Mongoose model'});
     for (const m of t.matchAll(/(?:sequelize|db)\.define\(\s*['"](\w+)/g)) r.models.push({name:m[1],kind:'Sequelize model'});
@@ -374,6 +436,7 @@ function extractFile(f, text){
     for (const m of text.matchAll(/@\w+(?:\.\w+)*\.(get|post|put|patch|delete|websocket)\s*\(\s*f?['"]([^'"]*)['"]/g)) r.routes.push({method:m[1].toUpperCase(),path:m[2]||'/'});
     for (const m of text.matchAll(/@\w+(?:\.\w+)*\.route\s*\(\s*['"]([^'"]*)['"](?:[^)]*methods\s*=\s*\[([^\]]*)\])?/g)) r.routes.push({method:(m[2]||'GET').replace(/['"\s]/g,'').toUpperCase()||'GET',path:m[1]});
     if (/(^|\/)urls\.py$/.test(f.path)) for (const m of text.matchAll(/\b(?:re_)?path\s*\(\s*r?['"]([^'"]*)['"]/g)) r.routes.push({method:'ANY',path:'/'+m[1]});
+    { const pms=[...text.matchAll(/\b(?:APIRouter|Blueprint)\s*\([^)]*?(?:prefix|url_prefix)\s*=\s*f?['"]([^'"]*)['"]/g)]; if (pms.length===1 && pms[0][1] && !/(^|\/)urls\.py$/.test(f.path)) for (const rt of r.routes) rt.path='/'+pms[0][1].replace(/^\/|\/$/g,'')+'/'+rt.path.replace(/^\//,''); }
     for (const m of text.matchAll(/^class\s+(\w+)\((?:[\w.]*\.)?(Model|Base|DeclarativeBase|SQLModel|Document|AbstractUser|BaseModel)\b/gm)) if (m[2]!=='BaseModel') r.models.push({name:m[1],kind:m[2]==='Model'?'Django model':m[2]==='Document'?'Document':'ORM model'});
     if (/if\s+__name__\s*==\s*['"]__main__['"]/.test(text)) r.entry='cli';
     if (/(FastAPI|Flask|Quart|Sanic|Starlette)\s*\(/.test(text) && /=\s*(FastAPI|Flask|Quart|Sanic|Starlette)\s*\(/.test(text)) r.entry='server';
@@ -395,7 +458,8 @@ function extractFile(f, text){
   } else if (['Java','Kotlin','Scala'].includes(lang)) {
     for (const m of text.matchAll(/^\s*import\s+(?:static\s+)?([\w.]+?)(?:\.\*|\._)?\s*;?\s*$/gm)) r.imports.push(m[1]+(/\.(\*|_)\s*;?\s*$/.test(m[0])?'.*':''));
     r.pkg = (text.match(/^\s*package\s+([\w.]+)/m)||[])[1];
-    for (const m of text.matchAll(/@(Get|Post|Put|Patch|Delete|Request)Mapping\s*(?:\(\s*(?:(?:value|path)\s*=\s*)?\{?\s*"([^"]*)")?/g)) r.routes.push({method:m[1]==='Request'?'ANY':m[1].toUpperCase(),path:'/'+(m[2]||'').replace(/^\//,'')});
+    { const cm=text.match(/@RequestMapping\s*\(\s*(?:(?:value|path)\s*=\s*)?\{?\s*"([^"]*)"[^)]*\)\s*(?:@\w+(?:\([^)]*\))?\s*)*(?:public\s+|open\s+|abstract\s+)*(?:class|interface)\b/); const cp=cm?cm[1].replace(/^\/|\/$/g,''):'';
+      for (const m of text.matchAll(/@(Get|Post|Put|Patch|Delete|Request)Mapping\s*(?:\(\s*(?:(?:value|path)\s*=\s*)?\{?\s*"([^"]*)")?/g)) { if (cm && m.index===cm.index) continue; r.routes.push({method:m[1]==='Request'?'ANY':m[1].toUpperCase(),path:('/'+cp+'/'+(m[2]||'').replace(/^\//,'')).replace(/\/+/g,'/').replace(/(.)\/$/,'$1')}); } }
     for (const m of text.matchAll(/@Entity\b[\s\S]{0,300}?class\s+(\w+)/g)) r.models.push({name:m[1],kind:'JPA entity'});
     for (const m of text.matchAll(/System\.getenv\(\s*"([A-Z][A-Z0-9_]{2,})"/g)) r.env.push(m[1]);
     if (/@SpringBootApplication/.test(text)) r.entry='server'; else if (/static\s+void\s+main\s*\(|fun\s+main\s*\(/.test(text)) r.entry='cli';
@@ -767,7 +831,7 @@ async function analyzeRepo(input, opts = {}, onProgress = ()=>{}){
   await pool(toScan, 12, async f=>{
     const t = await getText(f.path); done++;
     if (done%10===0 || done===toScan.length) onProgress({phase:`Scanning source files (${done}/${toScan.length})…`, pct:16+Math.round(done/toScan.length*66)});
-    if (t==null) return; f.scanned = true; f.loc = t.split('\n').length; const ex = extractFile(f,t); try { ex.classes = extractClasses(f,t); } catch(e){ ex.classes=[]; } try { ex.funcs = extractFunctions(f,t); } catch(e){ ex.funcs=null; } raw.set(f.id, ex);
+    if (t==null) return; f.scanned = true; f.loc = t.split('\n').length; const ex = extractFile(f,t); try { ex.classes = extractClasses(f,t); } catch(e){ ex.classes=[]; } try { ex.funcs = extractFunctions(f,t); } catch(e){ ex.funcs=null; } try { ex.http = extractHttpCalls(f,t); } catch(e){ ex.http=[]; } raw.set(f.id, ex);
   });
 
   /* ---------- resolution ---------- */
@@ -882,6 +946,13 @@ async function analyzeRepo(input, opts = {}, onProgress = ()=>{}){
     for (const v of r.env) { let e=envVars.get(v); if(!e){e={name:v,files:new Set(),example:null,sources:new Set()};envVars.set(v,e);} e.files.add(f.path); e.sources.add('code'); }
     if (r.dbProvider) dbProviders.add(r.dbProvider);
     if (r.entry && cf) entries.push({path:f.path, kind:r.entry, why:'code', comp:f.comp});
+  }
+  // express-style router mounts: app.use('/api/x', require('./routes/x')) → prefix that file's routes
+  {
+    const mountPref = new Map();
+    for (const [id, r] of raw) if (r.mounts) for (const mt of r.mounts) { try { const res = resolve(files[id], mt.spec, r); for (const t of res.internal) if (t.id!==id && !mountPref.has(t.id)) mountPref.set(t.id, {p: mt.prefix, from: id}); } catch(e){} }
+    const fullPref = (id, d=0) => { const m = mountPref.get(id); if (!m || d>4) return ''; return (fullPref(m.from, d+1) + m.p).replace(/\/+/g,'/'); };
+    if (mountPref.size) for (const rt of routes) { const fid = byPath.get(rt.file); if (!fid && fid!==0) continue; const fp = fullPref(typeof fid==='object'?fid.id:fid); if (fp) { rt.path = (fp.replace(/\/$/,'') + '/' + rt.path.replace(/^\//,'')).replace(/\/+/g,'/'); if (rt.path.length>1) rt.path = rt.path.replace(/\/$/,''); rt.mounted = true; } }
   }
   // filename-based entry points
   for (const f of srcFiles) {
@@ -1089,12 +1160,49 @@ async function analyzeRepo(input, opts = {}, onProgress = ()=>{}){
   const envList = [...envVars.values()].map(e=>({name:e.name,files:[...e.files],example:e.example,sources:[...e.sources]})).sort((a,b)=>a.name.localeCompare(b.name));
   routes.sort((a,b)=>a.path.localeCompare(b.path));
   const uniqRoutes=[]; { const seen=new Set(); for (const r of routes) { const k=r.method+' '+r.path+' '+r.file; if(!seen.has(k)){seen.add(k);uniqRoutes.push(r);} } }
+
+  /* ---------- match client HTTP calls to backend routes ---------- */
+  const apiCalls = []; const apiEdgeMap = new Map(); const clsByFile = new Map(); for (const k of classes) { let l=clsByFile.get(k.file); if(!l){l=[];clsByFile.set(k.file,l);} l.push(k); }
+  {
+    const segs = p => p.split('/').filter(Boolean);
+    const isPar = x => /^[:*]/.test(x) || /[{}<>\[\]()]/.test(x) || /:p/.test(x);
+    const rts = uniqRoutes.map((r,i)=>({i, r, seg:segs(r.path), meth:r.method})).filter(x=>x.r.method!=='PAGE');
+    const sameFile = new Map(); for (const x of rts) { const k=x.r.file+'|'+x.seg.map(s=>isPar(s)?'*':s.toLowerCase()).join('/'); sameFile.set(k,1); }
+    const mOk = (cm, rm) => rm==='ANY'||rm==='REST'||rm==='ALL'||cm==='ANY'||cm===rm||(rm==='HEAD'&&cm==='GET');
+    const byLast = new Map(); for (const x of rts) { if (!x.seg.length) continue; for (const s of x.seg) { if (isPar(s)) continue; const k=s.toLowerCase(); if(!byLast.has(k))byLast.set(k,[]); byLast.get(k).push(x); } }
+    for (const [id, r] of raw) {
+      if (!r.http || !r.http.length) continue; const f = files[id];
+      for (const c of r.http) {
+        const cs = segs(c.path); const ckey = f.path+'|'+cs.map(s=>isPar(s)?'*':s.toLowerCase()).join('/');
+        if (sameFile.has(ckey)) continue;
+        const local = !c.host || /^(localhost|127\.|0\.0\.0\.0|\[::1\]|\$)/.test(c.host);
+        let best = null;
+        if (local && cs.length) {
+          const cand = new Set(); for (const s of cs) { const l=byLast.get(s.toLowerCase()); if (l) for (const x of l) cand.add(x); }
+          for (const x of cand) {
+            const rs = x.seg; if (!rs.length || !mOk(c.method, x.meth)) continue;
+            const shortC = cs.length < rs.length, n = Math.min(cs.length, rs.length), ro = rs.length - n, co = cs.length - n;
+            let lit = 0, ok = true;
+            for (let i=0;i<n;i++) { const a=rs[ro+i], b=cs[co+i]; const pa=isPar(a), pb=isPar(b); if (pa||pb) continue; if (a.toLowerCase()!==b.toLowerCase()) { ok=false; break; } lit++; }
+            if (!ok || lit<1) continue;
+            const sc = lit*10 - (co+ro)*1.5 + (x.meth===c.method?3:0) + (co+ro===0?2:0) - (shortC?4:0);
+            if (!best || sc>best.sc) best={x,sc};
+          }
+        }
+        let cu=-1, mu=-1, bl=-1; for (const k of (clsByFile.get(id)||[])) for (let i=0;i<k.methods.length;i++) { const ml=k.mlines&&k.mlines[i]; if (ml!=null && ml<=c.line && ml>bl) { bl=ml; cu=k.id; mu=i; } }
+        const ent = {file:f.path, comp:f.comp, method:c.method, path:c.path, line:c.line, host:c.host||null, rt: best?best.x.i:-1, cu, mu};
+        apiCalls.push(ent);
+        if (best) { const to = best.x.r.comp, from = f.comp; if (from>=0 && to>=0 && from!==to) { const k=from+'>'+to; let e=apiEdgeMap.get(k); if(!e){e={s:from,t:to,w:0,eps:new Set(),ex:[]};apiEdgeMap.set(k,e);} e.w++; e.eps.add(best.x.i); if (e.ex.length<10) e.ex.push([f.path, c.method, c.path, best.x.r.file, c.line]); } }
+      }
+    }
+  }
+  const apiEdges = [...apiEdgeMap.values()].map(e=>({s:e.s,t:e.t,w:e.w,eps:e.eps.size,ex:e.ex}));
   onProgress({phase:'Done', pct:100});
   return {
     repo:{owner,name:repo,branch,url:meta.html_url,description:meta.description,stars:meta.stargazers_count,language:meta.language,license:meta.license&&meta.license.spdx_id,topics:meta.topics||[],pushed:meta.pushed_at,size:meta.size,forks:meta.forks_count,homepage:meta.homepage},
     stats:{...stats, sourceFiles:srcFiles.length, scanned:raw.size, scanTargets:toScan.length, budget, languages, testFiles:stats.byKind.test||0},
     files:files.map(f=>({id:f.id,path:f.path,size:f.size,ext:f.ext,kind:f.kind,lang:f.lang,comp:f.comp,scanned:f.scanned,loc:f.loc||0,imports:[...f.imports],importedBy:[...f.importedBy],externals:[...f.externals],routes:f.routes,models:f.models})),
-    classes:classes.map(c=>({id:c.id,name:c.name,kind:c.kind,fn:c.fn?1:0,file:c.file,comp:c.comp,line:c.line,methods:c.methods,mlines:c.mlines,ext:c.ext,impl:c.impl})), classEdges, calls, comps, edges:edgeList, fileEdges, services:services.map(s=>({...s,links:[...s.links.entries()]})),
+    classes:classes.map(c=>({id:c.id,name:c.name,kind:c.kind,fn:c.fn?1:0,file:c.file,comp:c.comp,line:c.line,methods:c.methods,mlines:c.mlines,ext:c.ext,impl:c.impl})), classEdges, calls, apiCalls:apiCalls.slice(0,4000), apiEdges, comps, edges:edgeList, fileEdges, services:services.map(s=>({...s,links:[...s.links.entries()]})),
     entries:entriesU, routes:uniqRoutes, models, env:envList,
     compose:{files:composeInfo, services:composeServices}, docker:dockerInfo, workflows, scripts, makeTargets, procfile, deployTargets,
     infraFiles:infraFiles.map(f=>f.path).slice(0,60),
@@ -1125,7 +1233,7 @@ const lsGet = k => { try { return localStorage.getItem(k); } catch(e){ return nu
 const lsSet = (k,v) => { try { v==null?localStorage.removeItem(k):localStorage.setItem(k,v); } catch(e){} };
 
 let A = null;
-const UI = {drillMode:'files', tab:'overview', sel:null, layout:'layered', showExt:true, drill:null, tree:{}, selFile:null, apiFilter:'', envFilter:'', treeFilter:''};
+const UI = {showApi:true, apiSel:null, apiComp:'', drillMode:'files', tab:'overview', sel:null, layout:'layered', showExt:true, drill:null, tree:{}, selFile:null, apiFilter:'', envFilter:'', treeFilter:''};
 
 /* ---------------- derived ---------------- */
 let D = null;
@@ -1318,6 +1426,7 @@ function archNodesEdges(){
       badges:[c.entries.length?'⚡':'', c.cycle?'↻':''].filter(Boolean), weight:c.files.length, r:11+Math.min(24,Math.sqrt(c.files.length)*2.4), title:`${c.label}\n${describeComp(c)}`});
   });
   D.edges.forEach(e=>edges.push({s:'c'+e.s,t:'c'+e.t,w:e.w,back:e.back,raw:e,title:`${A.comps[e.s].label} → ${A.comps[e.t].label}\n${e.w} import${e.w>1?'s':''}${e.back?'\n⚠ goes against the usual layer direction':''}`}));
+  if (UI.showApi) (A.apiEdges||[]).forEach(e=>edges.push({s:'c'+e.s,t:'c'+e.t,w:e.w,kind:'api',apiRaw:e,title:`${A.comps[e.s].label} → ${A.comps[e.t].label}\nHTTP API: ${e.w} call${e.w>1?'s':''} to ${e.eps} endpoint${e.eps>1?'s':''}`}));
   if (UI.showExt) {
     A.services.forEach((s,i)=>{ nodes.push({id:'x'+i, kind:'svc', cat:s.cat, label:s.label, sub:s.cat+(s.inferred?' · inferred':''), icon:CAT_ICON[s.cat], color:'var(--ext)', sidx:i, weight:s.links.length, r:15, title:`${s.label} (${s.cat})\ndetected via ${s.sources.join(', ')}`}); });
     D.svcEdges.forEach(e=>edges.push({s:'c'+e.s,t:e.t,w:e.w,inferred:e.inferred,title:`${A.comps[e.s].label} → ${A.services[+e.t.slice(1)].label}${e.inferred?' (inferred)':''}`}));
@@ -1384,6 +1493,7 @@ function drawerComp(c){
    <div class="hint">${Object.entries(c.langs).sort((a,b)=>b[1]-a[1]).map(([l,n])=>`${l} ${n}`).join(' · ')}</div>
    ${c.tags.length?`<h5>Built with</h5>${c.tags.map(t=>`<span class="tag fw">${esc(t.label)}</span>`).join('')}`:''}
    ${c.entries.length?`<h5>Entry points</h5><ul class="clean">${c.entries.slice(0,6).map(p=>`<li>⚡ <a href="${ghBlob(p)}" target="_blank" rel="noopener" class="mono">${esc(p)}</a></li>`).join('')}</ul>`:''}
+   ${(A.apiEdges||[]).some(e=>e.s===c.id||e.t===c.id)?`<h5>HTTP API links</h5><ul class="clean">${(A.apiEdges||[]).filter(e=>e.s===c.id).map(e=>`<li>calls the API of ${compLink(e.t)} <span class="w">${e.w} call${e.w>1?'s':''} · ${e.eps} endpoint${e.eps>1?'s':''}</span></li>`).join('')}${(A.apiEdges||[]).filter(e=>e.t===c.id).map(e=>`<li>called over HTTP by ${compLink(e.s)} <span class="w">${e.w} call${e.w>1?'s':''}</span></li>`).join('')}</ul><a class="btn sm" data-gotoapi>See request flow →</a>`:''}
    ${eps.length?`<h5>Endpoints (${c.endpoints})</h5><ul class="clean">${eps.map(r=>`<li><span class="method m-${r.method}">${r.method}</span> <span class="mono">${esc(r.path)}</span></li>`).join('')}</ul>`:''}
    <h5>Depends on (${out.length})</h5>${out.length?`<ul class="clean">${out.map(e=>`<li>${compLink(e.t)} <span class="w">${e.w}×</span><div class="ex">${e.ex.slice(0,2).map(x=>esc(base(x[0]))+' → '+esc(base(x[1]))).join('<br>')}</div></li>`).join('')}</ul>`:'<div class="hint">Nothing inside the repo (leaf).</div>'}
    <h5>Used by (${inc.length})</h5>${inc.length?`<ul class="clean">${inc.map(e=>`<li>${compLink(e.s)} <span class="w">${e.w}×</span></li>`).join('')}</ul>`:'<div class="hint">Not imported by other components — likely an entry point or unused.</div>'}
@@ -1519,6 +1629,10 @@ function drawerSvc(s){
   wireDrawer();
 }
 function drawerEdge(e){
+  if (e.kind==='api' && e.apiRaw) { const r=e.apiRaw; const calls=(A.apiCalls||[]).filter(c=>c.comp===r.s&&c.rt>=0&&A.routes[c.rt].comp===r.t);
+    $('#drawer').innerHTML = `<h4>${compLink(r.s)} → ${compLink(r.t)}</h4><div style="margin:6px 0"><span class="pill">HTTP API</span> ${r.w} call${r.w>1?'s':''} to ${r.eps} endpoint${r.eps>1?'s':''}</div>
+     <h5>Calls</h5><ul class="clean">${calls.slice(0,40).map(c=>{ const rt=A.routes[c.rt]; return `<li style="font-size:12px"><span class="method m-${c.method}">${c.method}</span> <span class="mono">${esc(c.path)}</span><br><span class="hint">in </span><a class="mono" href="${ghBlob(c.file)}#L${c.line}" target="_blank" rel="noopener">${esc(base(c.file))}:${c.line}</a>${c.cu>=0?` <span class="hint">(${esc(mname(c.cu,c.mu))})</span>`:''}<br><span class="hint">→ handled by </span><span class="mono">${esc(rt.method)} ${esc(rt.path)}</span> <span class="hint">in ${esc(base(rt.file))}</span></li>`; }).join('')}</ul>${calls.length>40?`<div class="hint">+${calls.length-40} more — see the API tab.</div>`:''}<div style="margin-top:10px"><a class="btn sm" id="toApiTab">Open in API tab</a></div>`;
+    wireDrawer(); const b=$('#toApiTab'); if(b) b.onclick=()=>showTab('api'); return; }
   const r = e.raw; if(!r){ return; }
   $('#drawer').innerHTML = `<h4>${compLink(r.s)} → ${compLink(r.t)}</h4><div style="margin:6px 0">${r.w} import${r.w>1?'s':''}</div>${e.back?'<div class="callout warn">Goes against the usual layer direction (a lower layer importing a higher one). Worth a look if you care about clean layering.</div>':''}
    <h5>Examples</h5><ul class="clean">${r.ex.map(x=>`<li class="mono" style="font-size:11.5px"><a href="${ghBlob(x[0])}" target="_blank" rel="noopener">${esc(x[0])}</a><br>→ <a href="${ghBlob(x[1])}" target="_blank" rel="noopener">${esc(x[1])}</a></li>`).join('')}</ul>`;
@@ -1541,6 +1655,7 @@ function wireDrawer(){
   document.querySelectorAll('#drawer [data-comp]').forEach(a=>a.onclick=()=>selectComp(+a.dataset.comp));
   document.querySelectorAll('#drawer [data-class]').forEach(a=>a.onclick=()=>focusClass(+a.dataset.class));
   document.querySelectorAll('#drawer [data-method]').forEach(a=>a.onclick=()=>{ const [c,m]=a.dataset.method.split('.').map(Number); focusMethod(c,m); });
+  document.querySelectorAll('#drawer [data-gotoapi]').forEach(a=>a.onclick=()=>showTab('api'));
   document.querySelectorAll('#drawer [data-svc]').forEach(a=>a.onclick=()=>{ const i=+a.dataset.svc; UI.sel='x'+i; GRAPH.select(UI.sel); GRAPH.focus&&GRAPH.focus(UI.sel); drawerSvc(A.services[i]); });
 }
 function drawerHome(){
@@ -1595,7 +1710,7 @@ function renderOverview(){
     <div class="stat"><b>${fmt(s.totalFiles)}</b><span>files in repo</span></div><div class="stat"><b>${fmt(s.sourceFiles)}</b><span>source files</span></div>
     <div class="stat"><b>${A.comps.length}</b><span>components</span></div><div class="stat"><b>${D.edges.length}</b><span>component links</span></div>
     <div class="stat"><b>${A.services.length}</b><span>external systems</span></div><div class="stat"><b>${A.routes.filter(x=>x.method!=='PAGE').length}</b><span>endpoints</span></div>
-    <div class="stat"><b>${A.models.length}</b><span>data models</span></div><div class="stat"><b>${A.entries.length}</b><span>entry points</span></div>${(A.classes||[]).some(k=>!k.fn)?`<div class="stat"><b>${fmt(A.classes.filter(k=>!k.fn).length)}</b><span>classes & types</span></div><div class="stat"><b>${(A.classEdges||[]).filter(e=>e[2]>0).length}</b><span>inheritance links</span></div>${(A.calls||[]).length?`<div class="stat"><b>${fmt(A.calls.length)}</b><span>function & method calls</span></div>`:''}`:''}${(A.classes||[]).some(k=>k.fn)&&!(A.classes||[]).some(k=>!k.fn)?`<div class="stat"><b>${fmt(A.classes.reduce((a,k)=>a+k.methods.length,0))}</b><span>functions</span></div><div class="stat"><b>${fmt((A.calls||[]).length)}</b><span>function calls</span></div>`:''}</div>
+    ${(A.apiCalls||[]).filter(c=>c.rt>=0).length?`<div class="stat"><b>${(A.apiCalls||[]).filter(c=>c.rt>=0).length}</b><span>client → API calls</span></div>`:''}<div class="stat"><b>${A.models.length}</b><span>data models</span></div><div class="stat"><b>${A.entries.length}</b><span>entry points</span></div>${(A.classes||[]).some(k=>!k.fn)?`<div class="stat"><b>${fmt(A.classes.filter(k=>!k.fn).length)}</b><span>classes & types</span></div><div class="stat"><b>${(A.classEdges||[]).filter(e=>e[2]>0).length}</b><span>inheritance links</span></div>${(A.calls||[]).length?`<div class="stat"><b>${fmt(A.calls.length)}</b><span>function & method calls</span></div>`:''}`:''}${(A.classes||[]).some(k=>k.fn)&&!(A.classes||[]).some(k=>!k.fn)?`<div class="stat"><b>${fmt(A.classes.reduce((a,k)=>a+k.methods.length,0))}</b><span>functions</span></div><div class="stat"><b>${fmt((A.calls||[]).length)}</b><span>function calls</span></div>`:''}</div>
    <div class="two" style="margin-top:6px">
     <div><h3>Languages</h3><div class="box"><div class="bar" style="height:12px">${L.slice(0,10).map((l,i)=>`<i style="width:${l.bytes/tot*100}%;background:hsl(${(i*57+200)%360} 65% 60%)" title="${l.name}"></i>`).join('')}</div>
      <div class="legend">${L.slice(0,10).map((l,i)=>`<span><i style="background:hsl(${(i*57+200)%360} 65% 60%)"></i>${l.name} ${Math.round(l.bytes/tot*100)}% · ${l.files} files</span>`).join('')}</div></div>
@@ -1612,12 +1727,13 @@ function renderArch(){
   if (!A.comps.length) { $('#panel').innerHTML='<div class="wrap"><div class="callout">No source code components were found in this repo (it may be docs, config or assets only).</div></div>'; return; }
   $('#panel').innerHTML = `<div class="archwrap"><div class="canvas"><svg id="g1"></svg>
     <div class="toolbar"><div class="grp"><button data-l="layered" class="${UI.layout==='layered'?'on':''}">Layers</button><button data-l="force" class="${UI.layout==='force'?'on':''}">Network</button></div>
-     <label><input type="checkbox" id="extChk" ${UI.showExt?'checked':''}> External systems</label><button class="btn sm" id="fitBtn">Fit</button><input type="search" id="findIn" placeholder="Find component or class…" list="complist"><datalist id="complist">${A.comps.map(c=>`<option value="${esc(c.label)}">`).join('')}${(A.classes||[]).filter(k=>!k.fn).slice(0,4000).map(k=>`<option value="${esc(k.name)}">`).join('')}</datalist></div>
-    <div class="keybox"><div class="row"><span><i class="ln" style="border-color:var(--out)"></i>depends on</span><span><i class="ln" style="border-color:var(--in)"></i>used by</span><span><i class="ln" style="border-color:var(--warn);border-top-style:dashed"></i>against layer flow</span><span>⚡ entry · ↻ cycle</span></div></div></div>
+     <label><input type="checkbox" id="extChk" ${UI.showExt?'checked':''}> External systems</label>${(A.apiEdges||[]).length?`<label><input type="checkbox" id="apiChk" ${UI.showApi?'checked':''}> API calls</label>`:''}<button class="btn sm" id="fitBtn">Fit</button><input type="search" id="findIn" placeholder="Find component or class…" list="complist"><datalist id="complist">${A.comps.map(c=>`<option value="${esc(c.label)}">`).join('')}${(A.classes||[]).filter(k=>!k.fn).slice(0,4000).map(k=>`<option value="${esc(k.name)}">`).join('')}</datalist></div>
+    <div class="keybox"><div class="row"><span><i class="ln" style="border-color:var(--out)"></i>depends on</span><span><i class="ln" style="border-color:var(--in)"></i>used by</span><span><i class="ln" style="border-color:var(--warn);border-top-style:dashed"></i>against layer flow</span>${(A.apiEdges||[]).length?'<span><i class="ln" style="border-color:var(--acc);border-top-style:dashed"></i>HTTP API call</span>':''}<span>⚡ entry · ↻ cycle</span></div></div></div>
     <aside class="drawer" id="drawer"></aside></div>`;
   GRAPH = GraphView($('#g1'),{node:selectNode, edge:drawerEdge, background:()=>{ UI.sel=null; GRAPH.select(null); if(UI.drill==null) drawerHome(); }});
   document.querySelectorAll('.toolbar [data-l]').forEach(b=>b.onclick=()=>{ UI.layout=b.dataset.l; UI.drill=null; document.querySelectorAll('.toolbar [data-l]').forEach(x=>x.classList.toggle('on',x===b)); drawArch(); });
   $('#extChk').onchange=e=>{ UI.showExt=e.target.checked; drawArch(); };
+  if ($('#apiChk')) $('#apiChk').onchange=e=>{ UI.showApi=e.target.checked; drawArch(); };
   $('#fitBtn').onclick=()=>GRAPH.fit();
   $('#findIn').onchange=e=>{ const v=e.target.value, lv=v.toLowerCase(); const c=A.comps.find(c=>c.label===v); if(c) return selectComp(c.id); const k=(A.classes||[]).find(k=>!k.fn&&k.name===v)||(A.classes||[]).find(k=>!k.fn&&k.name.toLowerCase()===lv); if(k) return focusClass(k.id); const c2=A.comps.find(c=>c.label.toLowerCase().includes(lv)); if(c2) return selectComp(c2.id); const k2=(A.classes||[]).find(k=>!k.fn&&k.name.toLowerCase().includes(lv)); if(k2) focusClass(k2.id); };
   UI.drill=null; drawArch(); if (UI.sel && UI.sel[0]==='c') drawerComp(A.comps[+UI.sel.slice(1)]); else drawerHome();
@@ -1659,18 +1775,71 @@ function renderFlows(){
 }
 /* node ids in paths are numeric comp ids */
 
+let AGRAPH=null;
+function apiGraphData(){
+  const calls=(A.apiCalls||[]).filter(c=>c.rt>=0 && (!UI.apiComp || String(c.comp)===UI.apiComp));
+  const N=new Map(), E=new Map(), fileId=new Map(A.files.map(f=>[f.path,f.id]));
+  const node=(id,o)=>{ let n=N.get(id); if(!n){ if(N.size>=160) return null; n={id,weight:0,kind:'comp',...o}; N.set(id,n); } return n; };
+  const edge=(s,t,o)=>{ const k=s+'>'+t; let e=E.get(k); if(!e){ e={s,t,w:0,...o}; E.set(k,e); } e.w++; };
+  const cc = id => id>=0?A.comps[id]:null; const colr = id => { const c=cc(id); return c?COMP_COLOR(c):undefined; };
+  for (const c of calls) {
+    const rt=A.routes[c.rt]; const eid='e'+c.rt;
+    const en=node(eid,{col:2,label:rt.method+' '+rt.path,sub:rt.comp>=0?A.comps[rt.comp].label:base(rt.file),color:colr(rt.comp),epRt:c.rt,title:`${rt.method} ${rt.path}\nhandled in ${rt.file}`}); if(!en) continue; en.weight++;
+    let src;
+    if (c.cu>=0) {
+      const k=A.classes[c.cu], uk=c.cu+'.'+c.mu; src='u'+uk;
+      const un=node(src,{col:1,label:k.fn?k.methods[c.mu]:k.name+'.'+k.methods[c.mu],sub:base(c.file),color:colr(c.comp),unitKey:uk,title:mname(c.cu,c.mu)+'\n'+c.file}); if(!un) continue; un.weight++;
+      if (!un.seeded) { un.seeded=true; for (const [ca,ma] of (D.mIn.get(uk)||[])) { const kf=A.classes[ca]; if (A.files[kf.file].path===c.file) continue; const fid='f'+kf.file; const fn=node(fid,{col:0,label:base(A.files[kf.file].path),sub:A.files[kf.file].comp>=0?A.comps[A.files[kf.file].comp].label:'',color:colr(A.files[kf.file].comp),fileKey:kf.file,title:A.files[kf.file].path}); if(!fn) break; fn.weight++; edge(fid,src,{kind:'call',title:`${mname(ca,ma)} calls ${mname(c.cu,c.mu)}`}); } }
+    } else {
+      const fid_=fileId.get(c.file); src='f'+fid_; const fn=node(src,{col:0,label:base(c.file),sub:'calls the API directly',color:colr(c.comp),fileKey:fid_,title:c.file}); if(!fn) continue; fn.weight++;
+    }
+    edge(src,eid,{kind:'api',title:`${c.method} ${c.path}\n${c.file}:${c.line}`});
+  }
+  return {nodes:[...N.values()], edges:[...E.values()], total:calls.length};
+}
+function apiCallRow(c){ const rt=c.rt>=0?A.routes[c.rt]:null; return `<li style="font-size:12px"><span class="method m-${c.method}">${c.method}</span> <span class="mono">${esc(c.path)}</span>${c.host?` <span class="pill">${esc(c.host)}</span>`:''}<br><a class="mono" href="${ghBlob(c.file)}#L${c.line}" target="_blank" rel="noopener">${esc(short(c.file,46))}:${c.line}</a>${c.cu>=0?` <span class="hint">(${esc(mname(c.cu,c.mu))})</span>`:''}${rt?`<br><span class="hint">→ handled by <span class="mono">${esc(rt.method)} ${esc(rt.path)}</span> in ${esc(base(rt.file))}</span>`:''}</li>`; }
+function apiDetail(n){
+  const all=A.apiCalls||[]; let title, body, list=[];
+  if (n.epRt!=null) { const rt=A.routes[n.epRt]; list=all.filter(c=>c.rt===n.epRt); title=`<span class="method m-${rt.method}">${rt.method}</span> <span class="mono">${esc(rt.path)}</span>`; body=`<div class="hint">Handled in <a class="mono" href="${ghBlob(rt.file)}" target="_blank" rel="noopener">${esc(rt.file)}</a>${rt.comp>=0?' · '+compLink(rt.comp):''}</div><h5>${list.length} client call${list.length>1?'s':''}</h5>`; }
+  else if (n.unitKey) { const [cu,mu]=n.unitKey.split('.').map(Number); list=all.filter(c=>c.cu===cu&&c.mu===mu&&c.rt>=0); const callers=D.mIn.get(n.unitKey)||[]; title=`<b>${esc(mname(cu,mu))}</b>`; body=`<div class="hint">API client function in <a class="mono" href="${ghBlob(A.files[A.classes[cu].file].path)}" target="_blank" rel="noopener">${esc(A.files[A.classes[cu].file].path)}</a></div><h5>Makes ${list.length} HTTP call${list.length>1?'s':''}</h5>`; n._tail=`<h5>Called by ${callers.length} function${callers.length!==1?'s':''}</h5><div>${callers.slice(0,30).map(([a,b])=>`<span class="tag mono">${esc(mname(a,b))}</span>`).join('')||'<span class="hint">Nothing in the scanned code calls it directly.</span>'}</div>`; }
+  else { const f=A.files[n.fileKey]; list=all.filter(c=>c.file===f.path&&c.rt>=0); title=`<b>${esc(base(f.path))}</b>`; body=`<div class="hint mono">${esc(f.path)}</div><h5>${list.length} HTTP call${list.length>1?'s':''} from this file</h5>`; }
+  $('#apiDetail').innerHTML = `<div class="box"><div>${title}</div>${body}<ul class="clean">${list.slice(0,30).map(apiCallRow).join('')}</ul>${list.length>30?`<div class="hint">+${list.length-30} more</div>`:''}${n._tail||''}</div>`;
+  document.querySelectorAll('#apiDetail [data-comp]').forEach(a=>a.onclick=()=>{ showTab('arch'); setTimeout(()=>selectComp(+a.dataset.comp),50); });
+}
 function renderApi(){
   const routes=A.routes, byMethod={}; routes.forEach(r=>byMethod[r.method]=(byMethod[r.method]||0)+1);
   const f=UI.apiFilter.toLowerCase();
-  const rs = routes.filter(r=>!f||(r.path+' '+r.file+' '+r.method).toLowerCase().includes(f));
+  const calls=A.apiCalls||[]; const matched=calls.filter(c=>c.rt>=0), unmatched=calls.filter(c=>c.rt<0);
+  const callsBy=new Map(); matched.forEach(c=>callsBy.set(c.rt,(callsBy.get(c.rt)||0)+1));
+  const rs = routes.map((r,i)=>({r,i})).filter(({r})=>!f||(r.path+' '+r.file+' '+r.method).toLowerCase().includes(f));
   const ms = A.models.filter(m=>!f||(m.name+' '+m.file+' '+m.kind).toLowerCase().includes(f));
-  $('#panel').innerHTML = `<div class="wrap"><input class="filter" id="apiF" placeholder="Filter routes & models…" value="${esc(UI.apiFilter)}">
+  const clientComps=[...new Set(matched.map(c=>c.comp))].filter(x=>x>=0);
+  const gd = matched.length? apiGraphData() : null;
+  const colMax = gd? Math.max(...[0,1,2].map(k=>gd.nodes.filter(n=>n.col===k).length)) : 0;
+  const gh = Math.max(280, Math.min(620, Math.min(colMax,9)*70+90 + (colMax>9?Math.ceil(colMax/9)*0:0)));
+  const hosts=new Map(); unmatched.forEach(c=>{ const k=c.host||'(same origin — no matching route found)'; hosts.set(k,(hosts.get(k)||0)+1); });
+  $('#panel').innerHTML = `<div class="wrap">
+   ${matched.length?`<h3>Frontend → backend calls <small>${matched.length} call${matched.length>1?'s':''} reach ${callsBy.size} of your endpoints</small></h3>
+    <p class="hint">Left to right: the UI code that uses the client, the function that sends the request, and the endpoint that handles it. Requests are matched to routes by method and path (a prefix like <span class="mono">/api/v1</span> is ignored). Click anything for call sites.</p>
+    ${clientComps.length>1?`<div style="margin:6px 0"><label class="hint">Only calls from <select id="apiComp"><option value="">all components</option>${clientComps.map(id=>`<option value="${id}" ${String(id)===UI.apiComp?'selected':''}>${esc(A.comps[id].label)}</option>`).join('')}</select></label></div>`:''}
+    <div class="box" style="padding:0;height:${gh}px;position:relative;overflow:hidden"><div class="canvas" style="position:absolute;inset:0"><svg id="g3"></svg></div></div>
+    <div id="apiDetail" style="margin-top:10px"><div class="hint">Click a node to see exactly where each request is made.</div></div>`
+    :`<div class="callout">No frontend → backend HTTP calls were matched to routes${calls.length?` (${calls.length} client request${calls.length>1?'s':''} found, none matched a route in this repo)`:''}. Supported clients: fetch, axios and similar wrappers, Angular HttpClient, SWR, generated OpenAPI SDKs, Python requests/httpx, Go net/http, Spring RestTemplate/WebClient and .NET HttpClient.</div>`}
+   <input class="filter" id="apiF" style="margin-top:18px" placeholder="Filter routes & models…" value="${esc(UI.apiFilter)}">
    <h3>HTTP surface <small>${routes.length} routes${Object.keys(byMethod).length?' · '+Object.entries(byMethod).map(([m,n])=>m+' '+n).join(' · '):''}</small></h3>
-   ${rs.length?`<table><tr><th style="width:70px">Method</th><th>Path</th><th>Component</th><th>Defined in</th></tr>${rs.slice(0,500).map(r=>`<tr><td><span class="method m-${r.method}">${r.method}</span></td><td class="mono">${esc(r.path)}</td><td>${r.comp>=0?compLink(r.comp):''}</td><td><a class="mono" href="${ghBlob(r.file)}" target="_blank" rel="noopener">${esc(short(r.file,52))}</a></td></tr>`).join('')}</table>${rs.length>500?`<p class="hint">Showing 500 of ${rs.length}.</p>`:''}`:'<div class="callout">No HTTP routes detected (supported: Express/Fastify/Koa, Next.js file routes, NestJS, Flask, FastAPI, Django, Spring, ASP.NET, Rails, Laravel, Go routers, Actix/Axum).</div>'}
+   ${rs.length?`<table><tr><th style="width:70px">Method</th><th>Path</th><th>Component</th><th>Defined in</th>${matched.length?'<th>Called from UI</th>':''}</tr>${rs.slice(0,500).map(({r,i})=>`<tr><td><span class="method m-${r.method}">${r.method}</span></td><td class="mono">${esc(r.path)}</td><td>${r.comp>=0?compLink(r.comp):''}</td><td><a class="mono" href="${ghBlob(r.file)}" target="_blank" rel="noopener">${esc(short(r.file,52))}</a></td>${matched.length?`<td>${callsBy.get(i)?`<a class="link" data-rt="${i}">${callsBy.get(i)} call${callsBy.get(i)>1?'s':''}</a>`:'<span class="hint">–</span>'}</td>`:''}</tr>`).join('')}</table>${rs.length>500?`<p class="hint">Showing 500 of ${rs.length}.</p>`:''}`:'<div class="callout">No HTTP routes detected (supported: Express/Fastify/Koa, Next.js file routes, NestJS, Flask, FastAPI, Django, Spring, ASP.NET, Rails, Laravel, Go routers, Actix/Axum).</div>'}
+   ${unmatched.length?`<h3>Client requests with no matching route <small>${unmatched.length} · ${[...hosts.entries()].slice(0,4).map(([h,n])=>esc(h)+' '+n).join(' · ')}</small></h3><details class="box"><summary>Show requests (external APIs, other services, or routes this scan could not see)</summary><ul class="clean" style="margin-top:8px">${unmatched.slice(0,80).map(apiCallRow).join('')}</ul></details>`:''}
    <h3>Data model <small>${A.models.length} tables / entities / models</small></h3>
-   ${ms.length?`<table><tr><th>Name</th><th>Kind</th><th>Component</th><th>Defined in</th></tr>${ms.slice(0,500).map(m=>`<tr><td><b>${esc(m.name)}</b></td><td><span class="pill">${esc(m.kind)}</span></td><td>${m.comp>=0?compLink(m.comp):''}</td><td><a class="mono" href="${ghBlob(m.file)}" target="_blank" rel="noopener">${esc(short(m.file,52))}</a></td></tr>`).join('')}</table>`:'<div class="callout">No ORM models / SQL tables detected.</div>'}</div>`;
+   ${ms.length?`<table><tr><th>Name</th><th>Kind</th><th>Component</th><th>Defined in</th></tr>${ms.slice(0,500).map(m=>`<tr><td><b>${esc(m.name)}</b></td><td><span class="pill">${esc(m.kind)}</span></td><td>${m.comp>=0?compLink(m.comp):''}</td><td><a class="mono" href="${ghBlob(m.file)}" target="_blank" rel="noopener">${esc(short(m.file,52))}</a></td></tr>`).join('')}</table>`:'<div class="callout">No data models detected.</div>'}</div>`;
   $('#apiF').oninput=e=>{ UI.apiFilter=e.target.value; const pos=e.target.selectionStart; renderApi(); const i=$('#apiF'); i.focus(); i.setSelectionRange(pos,pos); };
   document.querySelectorAll('#panel [data-comp]').forEach(a=>a.onclick=()=>{ showTab('arch'); setTimeout(()=>selectComp(+a.dataset.comp),50); });
+  if ($('#apiComp')) $('#apiComp').onchange=e=>{ UI.apiComp=e.target.value; renderApi(); };
+  if (gd) {
+    AGRAPH = GraphView($('#g3'),{node:n=>{ AGRAPH.select(n.id); apiDetail(n); }, edge:()=>{}, background:()=>{ AGRAPH.select(null); $('#apiDetail').innerHTML='<div class="hint">Click a node to see exactly where each request is made.</div>'; }});
+    const L = layeredLayout(gd.nodes,gd.edges,n=>n.col,{titles:['UI code that uses the client','Function that sends the request','Backend endpoint'],h:52,maxRows:10});
+    AGRAPH.set(gd.nodes,gd.edges,'layered',L); requestAnimationFrame(()=>AGRAPH.fit());
+    document.querySelectorAll('#panel [data-rt]').forEach(a=>a.onclick=()=>{ const id='e'+a.dataset.rt, n=AGRAPH.byId.get(id); window.scrollTo&&$('#g3').scrollIntoView({block:'center',behavior:'smooth'}); if(n){ AGRAPH.select(id); AGRAPH.focus(id); apiDetail(n); } else apiDetail({epRt:+a.dataset.rt}); });
+  } else document.querySelectorAll('#panel [data-rt]').forEach(a=>a.onclick=()=>apiDetail({epRt:+a.dataset.rt}));
 }
 
 let RGRAPH=null;
@@ -1760,6 +1929,7 @@ function mermaid(){
   if (A.services.length) { lines.push('  subgraph EXT["External systems"]'); A.services.forEach((s,i)=>lines.push(`    x${i}[("${q(s.label)}")]`)); lines.push('  end'); }
   D.edges.forEach(e=>lines.push(`  c${e.s} ${e.back?'-.->':'-->'}|${e.w}| c${e.t}`));
   A.services.forEach((s,i)=>s.links.forEach(l=>lines.push(`  c${l[0]} -.-> x${i}`)));
+  (A.apiEdges||[]).forEach(e=>lines.push(`  c${e.s} -. "HTTP API ×${e.w}" .-> c${e.t}`));
   return lines.join('\n');
 }
 function classMermaid(){

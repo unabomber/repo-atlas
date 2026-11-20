@@ -206,6 +206,66 @@ const PY_STDLIB = new Set('os sys re json math time datetime typing collections 
 const JS_EXT_TRY = ['.ts','.tsx','.js','.jsx','.mjs','.cjs','.vue','.svelte','.astro'];
 
 function stripJsComments(t){ return t.replace(/\/\*[\s\S]*?\*\//g,'').replace(/^\s*\/\/.*$/gm,''); }
+
+/* ---------- client-side HTTP calls (frontend → backend API) ---------- */
+const NOT_HTTP_RECV = new Set(['app','router','server','fastify','route','routes','r','v1','v2','express','map','cache','headers','params','searchparams','formdata','storage','localstorage','sessionstorage','object','reflect','weakmap','store','config','env','process','os','path','sys','dict']);
+function normUrl(raw){
+  let s = String(raw).trim(), host = null;
+  const m = s.match(/^(?:https?:)?\/\/([^\/?#]+)(.*)$/i);
+  if (m) { host = m[1]; s = m[2] || '/'; }
+  s = s.replace(/^\$\{[^}]*\}(?=\/|$)/, '').replace(/^\{[^}]*\}(?=\/)/, '');
+  s = s.replace(/\$\{[^}]*\}/g, ':p').replace(/\{[^}]*\}/g, ':p').split(/[?#]/)[0];
+  if (s[0] !== '/') return null;
+  s = s.replace(/\/{2,}/g, '/'); if (s.length > 1) s = s.replace(/\/$/, '');
+  if (s.length > 160 || /\s/.test(s)) return null;
+  return {path: s, host};
+}
+function extractHttpCalls(f, text){
+  const out = [], seen = new Set(); const lang = f.lang;
+  const lineAt = i => { let n = 1; for (let k = text.indexOf('\n'); k !== -1 && k < i; k = text.indexOf('\n', k + 1)) n++; return n; };
+  const push = (method, raw, idx) => {
+    if (out.length >= 120) return; const u = normUrl(raw); if (!u) return;
+    method = (method || 'GET').toUpperCase(); if (!/^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)$/.test(method)) method = 'ANY';
+    const k = method + ' ' + u.path + ' ' + (u.host || ''); if (seen.has(k)) return; seen.add(k);
+    out.push({method, path: u.path, host: u.host, line: lineAt(idx)});
+  };
+  const LIT = String.raw`(?:[\w$.\[\]()]+\s*\+\s*)?(?<q>['"` + '`' + String.raw`])(?<u>(?:(?!\k<q>)[^\\\n]|\\.)*)\k<q>`;
+  const winMethod = (i, back) => { const w = text.slice(Math.max(0, i - (back || 0)), i + 260); const m = w.match(/\b(?:method|type)\s*:\s*['"`](\w+)['"`]/i); return m ? m[1] : null; };
+  if (['JavaScript','TypeScript','Vue','Svelte','Astro'].includes(lang)) {
+    let t = text;
+    const consts = new Map();
+    for (const m of t.matchAll(/\b(?:const|let|var|final|static)\s+([A-Za-z_$][\w$]*)\s*(?::\s*string\s*)?=\s*(?:`([^`\n]*)`|'([^'\n]*)'|"([^"\n]*)")/g)) { const v = m[2] ?? m[3] ?? m[4]; if (/^(?:https?:)?\/\/|^\/|^\$\{/.test(v) && !consts.has(m[1])) consts.set(m[1], v); }
+    if (consts.size) {
+      for (const [n, v] of consts) { const re = new RegExp(String.raw`(\(\s*)` + n.replace(/\$/g, '\\$') + String.raw`(?=\s*[,)+])`, 'g'); t = t.replace(re, (_, a) => a + JSON.stringify(v)); t = t.split('${' + n + '}').join(v.replace(/\$\{/g, '$\u0000{')); }
+      t = t.replace(/\u0000/g, '');
+      for (let k = 0; k < 3; k++) t = t.replace(/(["'`])([^"'`\n]*)\1\s*\+\s*(["'`])([^"'`\n]*)\3/g, (_, q1, a, q3, c) => '"' + a + c + '"');
+    }
+    const U = m => { const u = m.groups.u, e = m.index + m[0].length; return /^\s*\+\s*(?!['"`])[\w$(]/.test(t.slice(e, e + 30)) ? u + (u.endsWith('/') ? ':p' : '/:p') : u; };
+    const winMethod = (i, back) => { const w = t.slice(Math.max(0, i - (back || 0)), i + 260); const mm = w.match(/\b(?:method|type)\s*:\s*['"`](\w+)['"`]/i); return mm ? mm[1] : null; };
+    for (const m of t.matchAll(new RegExp(String.raw`(?<![\w$.])(?:fetch|\$fetch|ofetch|useFetch|useSWR|useSWRImmutable)\s*(?:<[^>()]*>)?\(\s*` + LIT, 'g'))) push(winMethod(m.index + m[0].length), U(m), m.index);
+    for (const m of t.matchAll(new RegExp(String.raw`([\w$][\w$.]*?)\s*\.\s*(get|post|put|patch|delete|head|options|request)\s*(?:<[^>()]*>)?\(\s*` + LIT, 'g'))) {
+      const last = m[1].split('.').pop().toLowerCase(); if (NOT_HTTP_RECV.has(last)) continue;
+      push(m[2] === 'request' ? winMethod(m.index + m[0].length) : m[2], U(m), m.index);
+    }
+    for (const m of t.matchAll(new RegExp(String.raw`(?<![\w$.])(?:axios|\$http|\$|ky|got|superagent)\s*(?:<[^>()]*>)?\(\s*` + LIT, 'g'))) push(winMethod(m.index + m[0].length), U(m), m.index);
+    for (const m of t.matchAll(/\.\s*(get|post|put|patch|delete|head|options)\s*(?:<[^()]{0,400}?>)?\s*\(\s*\{/g)) { const w = t.slice(m.index + m[0].length, m.index + m[0].length + 600); const u = w.match(new RegExp(String.raw`\burl\s*:\s*` + LIT)); if (u) push(m[1], u.groups.u, m.index); }
+    for (const m of t.matchAll(new RegExp(String.raw`\burl\s*:\s*` + LIT, 'g'))) { const meth = winMethod(m.index, 220); if (meth) push(meth, U(m), m.index); }
+    for (const m of t.matchAll(new RegExp(String.raw`\.open\(\s*['"](GET|POST|PUT|PATCH|DELETE)['"]\s*,\s*` + LIT, 'g'))) push(m[1], U(m), m.index);
+  } else if (lang === 'Python') {
+    for (const m of text.matchAll(/\b([\w.]*?(?:requests|httpx|client|session|http|api|aiohttp)\w*)\.(get|post|put|patch|delete|head|request)\(\s*(?:\w+\s*,\s*)?f?(['"])([^'"\n]*)\3/gi)) {
+      const meth = m[2].toLowerCase() === 'request' ? ((text.slice(m.index, m.index + m[0].length).match(/\(\s*['"](\w+)['"]/) || [])[1]) : m[2]; if (m[2].toLowerCase() === 'request') continue; push(meth, m[4], m.index);
+    }
+  } else if (lang === 'Go') {
+    for (const m of text.matchAll(/\bhttp\.(Get|Post|Head|PostForm)\(\s*"([^"\n]*)"/g)) push(m[1] === 'PostForm' ? 'POST' : m[1], m[2], m.index);
+    for (const m of text.matchAll(/\bhttp\.NewRequest(?:WithContext)?\(\s*(?:ctx\s*,\s*)?(?:http\.Method(\w+)|"(\w+)")\s*,\s*"([^"\n]*)"/g)) push(m[1] || m[2], m[3], m.index);
+  } else if (['Java','Kotlin','Scala'].includes(lang)) {
+    for (const m of text.matchAll(/\b\w*(?:[rR]estTemplate|[wW]ebClient|[rR]estClient|[hH]ttpClient)\w*\s*\.\s*(getForObject|getForEntity|postForObject|postForEntity|postForLocation|put|delete|patchForObject)\(\s*"([^"\n]*)"/g)) push(/^get/.test(m[1]) ? 'GET' : /^post/.test(m[1]) ? 'POST' : /^patch/.test(m[1]) ? 'PATCH' : m[1], m[2], m.index);
+    for (const m of text.matchAll(/\.\s*(get|post|put|patch|delete)\(\s*\)\s*\.\s*uri\(\s*"([^"\n]*)"/g)) push(m[1], m[2], m.index);
+  } else if (['C#','Visual Basic'].includes(lang)) {
+    for (const m of text.matchAll(/\.\s*(Get|Post|Put|Patch|Delete)(?:Async|FromJsonAsync|AsJsonAsync)\s*(?:<[^>()]*>)?\(\s*\$?"([^"\n]*)"/g)) push(m[1], m[2], m.index);
+  }
+  return out;
+}
 function extractFile(f, text){
   const r = {imports:[], routes:[], models:[], env:[], entry:null, pkg:null, ns:null};
   const lang = f.lang, ext = f.ext;
@@ -219,7 +279,9 @@ function extractFile(f, text){
     for (const m of t.matchAll(/\bprocess\.env\.([A-Z][A-Z0-9_]{2,})/g)) r.env.push(m[1]);
     for (const m of t.matchAll(/\bimport\.meta\.env\.([A-Z][A-Z0-9_]{2,})/g)) r.env.push(m[1]);
     for (const m of t.matchAll(/\b(?:app|router|server|api|route|fastify|r|routes|v1|v2)\.(get|post|put|patch|delete|all|head|options)\s*\(\s*(['"`])([^'"`\n]+)\2/g)) if (/^[\/*]/.test(m[3])) r.routes.push({method:m[1].toUpperCase(),path:m[3]});
-    for (const m of t.matchAll(/@(Get|Post|Put|Patch|Delete)\(\s*['"`]?([^'"`)\n]*)['"`]?\s*\)/g)) r.routes.push({method:m[1].toUpperCase(),path:'/'+m[2].replace(/^\//,''),nest:true});
+    { const cp=(t.match(/@Controller\(\s*['"`]([^'"`]*)['"`]/)||[])[1]||''; for (const m of t.matchAll(/@(Get|Post|Put|Patch|Delete)\(\s*['"`]?([^'"`)\n]*)['"`]?\s*\)/g)) r.routes.push({method:m[1].toUpperCase(),path:('/'+cp.replace(/^\/|\/$/g,'')+'/'+m[2].replace(/^\//,'')).replace(/\/+/g,'/').replace(/(.)\/$/,'$1'),nest:true}); }
+    for (const m of t.matchAll(/\b(?:app|router|server|api|\w*[rR]outer|\w*Routes)\.route\(\s*(['"`])(\/[^'"`]*)\1\s*\)/g)) { const seg = t.slice(m.index + m[0].length, m.index + m[0].length + 500).split(/;|\n\s*\n/)[0]; for (const c of seg.matchAll(/^\s*\.\s*(get|post|put|patch|delete|all)\s*\(|\)\s*\.\s*(get|post|put|patch|delete|all)\s*\(/g)) r.routes.push({method:(c[1]||c[2]).toUpperCase(),path:m[2]}); }
+    r.mounts = []; for (const m of t.matchAll(/\b(?:app|router|server|api|\w*[rR]outer|\w*Routes)\.use\(\s*(['"`])(\/[^'"`]*)\1\s*,\s*(?:[\w$.()]+\s*,\s*)*?(?:require\(\s*['"]([^'"]+)['"]\s*\)|([\w$]+))\s*\)/g)) { let spec = m[3]; if (!spec && m[4]) { const im = t.match(new RegExp(String.raw`(?:import\s+(?:\*\s+as\s+)?` + m[4].replace(/\$/g,'\\$') + String.raw`\b[^'"]*from\s*|\b` + m[4].replace(/\$/g,'\\$') + String.raw`\s*=\s*require\(\s*)['"]([^'"]+)['"]`)); spec = im && im[1]; } if (spec) r.mounts.push({prefix: m[2], spec}); }
     for (const m of t.matchAll(/@Entity\([^)]*\)\s*(?:export\s+)?class\s+(\w+)/g)) r.models.push({name:m[1],kind:'TypeORM entity'});
     for (const m of t.matchAll(/mongoose\.model(?:<[^>]*>)?\(\s*['"](\w+)/g)) r.models.push({name:m[1],kind:'Mongoose model'});
     for (const m of t.matchAll(/(?:sequelize|db)\.define\(\s*['"](\w+)/g)) r.models.push({name:m[1],kind:'Sequelize model'});
@@ -233,6 +295,7 @@ function extractFile(f, text){
     for (const m of text.matchAll(/@\w+(?:\.\w+)*\.(get|post|put|patch|delete|websocket)\s*\(\s*f?['"]([^'"]*)['"]/g)) r.routes.push({method:m[1].toUpperCase(),path:m[2]||'/'});
     for (const m of text.matchAll(/@\w+(?:\.\w+)*\.route\s*\(\s*['"]([^'"]*)['"](?:[^)]*methods\s*=\s*\[([^\]]*)\])?/g)) r.routes.push({method:(m[2]||'GET').replace(/['"\s]/g,'').toUpperCase()||'GET',path:m[1]});
     if (/(^|\/)urls\.py$/.test(f.path)) for (const m of text.matchAll(/\b(?:re_)?path\s*\(\s*r?['"]([^'"]*)['"]/g)) r.routes.push({method:'ANY',path:'/'+m[1]});
+    { const pms=[...text.matchAll(/\b(?:APIRouter|Blueprint)\s*\([^)]*?(?:prefix|url_prefix)\s*=\s*f?['"]([^'"]*)['"]/g)]; if (pms.length===1 && pms[0][1] && !/(^|\/)urls\.py$/.test(f.path)) for (const rt of r.routes) rt.path='/'+pms[0][1].replace(/^\/|\/$/g,'')+'/'+rt.path.replace(/^\//,''); }
     for (const m of text.matchAll(/^class\s+(\w+)\((?:[\w.]*\.)?(Model|Base|DeclarativeBase|SQLModel|Document|AbstractUser|BaseModel)\b/gm)) if (m[2]!=='BaseModel') r.models.push({name:m[1],kind:m[2]==='Model'?'Django model':m[2]==='Document'?'Document':'ORM model'});
     if (/if\s+__name__\s*==\s*['"]__main__['"]/.test(text)) r.entry='cli';
     if (/(FastAPI|Flask|Quart|Sanic|Starlette)\s*\(/.test(text) && /=\s*(FastAPI|Flask|Quart|Sanic|Starlette)\s*\(/.test(text)) r.entry='server';
@@ -254,7 +317,8 @@ function extractFile(f, text){
   } else if (['Java','Kotlin','Scala'].includes(lang)) {
     for (const m of text.matchAll(/^\s*import\s+(?:static\s+)?([\w.]+?)(?:\.\*|\._)?\s*;?\s*$/gm)) r.imports.push(m[1]+(/\.(\*|_)\s*;?\s*$/.test(m[0])?'.*':''));
     r.pkg = (text.match(/^\s*package\s+([\w.]+)/m)||[])[1];
-    for (const m of text.matchAll(/@(Get|Post|Put|Patch|Delete|Request)Mapping\s*(?:\(\s*(?:(?:value|path)\s*=\s*)?\{?\s*"([^"]*)")?/g)) r.routes.push({method:m[1]==='Request'?'ANY':m[1].toUpperCase(),path:'/'+(m[2]||'').replace(/^\//,'')});
+    { const cm=text.match(/@RequestMapping\s*\(\s*(?:(?:value|path)\s*=\s*)?\{?\s*"([^"]*)"[^)]*\)\s*(?:@\w+(?:\([^)]*\))?\s*)*(?:public\s+|open\s+|abstract\s+)*(?:class|interface)\b/); const cp=cm?cm[1].replace(/^\/|\/$/g,''):'';
+      for (const m of text.matchAll(/@(Get|Post|Put|Patch|Delete|Request)Mapping\s*(?:\(\s*(?:(?:value|path)\s*=\s*)?\{?\s*"([^"]*)")?/g)) { if (cm && m.index===cm.index) continue; r.routes.push({method:m[1]==='Request'?'ANY':m[1].toUpperCase(),path:('/'+cp+'/'+(m[2]||'').replace(/^\//,'')).replace(/\/+/g,'/').replace(/(.)\/$/,'$1')}); } }
     for (const m of text.matchAll(/@Entity\b[\s\S]{0,300}?class\s+(\w+)/g)) r.models.push({name:m[1],kind:'JPA entity'});
     for (const m of text.matchAll(/System\.getenv\(\s*"([A-Z][A-Z0-9_]{2,})"/g)) r.env.push(m[1]);
     if (/@SpringBootApplication/.test(text)) r.entry='server'; else if (/static\s+void\s+main\s*\(|fun\s+main\s*\(/.test(text)) r.entry='cli';
@@ -626,7 +690,7 @@ async function analyzeRepo(input, opts = {}, onProgress = ()=>{}){
   await pool(toScan, 12, async f=>{
     const t = await getText(f.path); done++;
     if (done%10===0 || done===toScan.length) onProgress({phase:`Scanning source files (${done}/${toScan.length})…`, pct:16+Math.round(done/toScan.length*66)});
-    if (t==null) return; f.scanned = true; f.loc = t.split('\n').length; const ex = extractFile(f,t); try { ex.classes = extractClasses(f,t); } catch(e){ ex.classes=[]; } try { ex.funcs = extractFunctions(f,t); } catch(e){ ex.funcs=null; } raw.set(f.id, ex);
+    if (t==null) return; f.scanned = true; f.loc = t.split('\n').length; const ex = extractFile(f,t); try { ex.classes = extractClasses(f,t); } catch(e){ ex.classes=[]; } try { ex.funcs = extractFunctions(f,t); } catch(e){ ex.funcs=null; } try { ex.http = extractHttpCalls(f,t); } catch(e){ ex.http=[]; } raw.set(f.id, ex);
   });
 
   /* ---------- resolution ---------- */
@@ -741,6 +805,13 @@ async function analyzeRepo(input, opts = {}, onProgress = ()=>{}){
     for (const v of r.env) { let e=envVars.get(v); if(!e){e={name:v,files:new Set(),example:null,sources:new Set()};envVars.set(v,e);} e.files.add(f.path); e.sources.add('code'); }
     if (r.dbProvider) dbProviders.add(r.dbProvider);
     if (r.entry && cf) entries.push({path:f.path, kind:r.entry, why:'code', comp:f.comp});
+  }
+  // express-style router mounts: app.use('/api/x', require('./routes/x')) → prefix that file's routes
+  {
+    const mountPref = new Map();
+    for (const [id, r] of raw) if (r.mounts) for (const mt of r.mounts) { try { const res = resolve(files[id], mt.spec, r); for (const t of res.internal) if (t.id!==id && !mountPref.has(t.id)) mountPref.set(t.id, {p: mt.prefix, from: id}); } catch(e){} }
+    const fullPref = (id, d=0) => { const m = mountPref.get(id); if (!m || d>4) return ''; return (fullPref(m.from, d+1) + m.p).replace(/\/+/g,'/'); };
+    if (mountPref.size) for (const rt of routes) { const fid = byPath.get(rt.file); if (!fid && fid!==0) continue; const fp = fullPref(typeof fid==='object'?fid.id:fid); if (fp) { rt.path = (fp.replace(/\/$/,'') + '/' + rt.path.replace(/^\//,'')).replace(/\/+/g,'/'); if (rt.path.length>1) rt.path = rt.path.replace(/\/$/,''); rt.mounted = true; } }
   }
   // filename-based entry points
   for (const f of srcFiles) {
@@ -948,12 +1019,49 @@ async function analyzeRepo(input, opts = {}, onProgress = ()=>{}){
   const envList = [...envVars.values()].map(e=>({name:e.name,files:[...e.files],example:e.example,sources:[...e.sources]})).sort((a,b)=>a.name.localeCompare(b.name));
   routes.sort((a,b)=>a.path.localeCompare(b.path));
   const uniqRoutes=[]; { const seen=new Set(); for (const r of routes) { const k=r.method+' '+r.path+' '+r.file; if(!seen.has(k)){seen.add(k);uniqRoutes.push(r);} } }
+
+  /* ---------- match client HTTP calls to backend routes ---------- */
+  const apiCalls = []; const apiEdgeMap = new Map(); const clsByFile = new Map(); for (const k of classes) { let l=clsByFile.get(k.file); if(!l){l=[];clsByFile.set(k.file,l);} l.push(k); }
+  {
+    const segs = p => p.split('/').filter(Boolean);
+    const isPar = x => /^[:*]/.test(x) || /[{}<>\[\]()]/.test(x) || /:p/.test(x);
+    const rts = uniqRoutes.map((r,i)=>({i, r, seg:segs(r.path), meth:r.method})).filter(x=>x.r.method!=='PAGE');
+    const sameFile = new Map(); for (const x of rts) { const k=x.r.file+'|'+x.seg.map(s=>isPar(s)?'*':s.toLowerCase()).join('/'); sameFile.set(k,1); }
+    const mOk = (cm, rm) => rm==='ANY'||rm==='REST'||rm==='ALL'||cm==='ANY'||cm===rm||(rm==='HEAD'&&cm==='GET');
+    const byLast = new Map(); for (const x of rts) { if (!x.seg.length) continue; for (const s of x.seg) { if (isPar(s)) continue; const k=s.toLowerCase(); if(!byLast.has(k))byLast.set(k,[]); byLast.get(k).push(x); } }
+    for (const [id, r] of raw) {
+      if (!r.http || !r.http.length) continue; const f = files[id];
+      for (const c of r.http) {
+        const cs = segs(c.path); const ckey = f.path+'|'+cs.map(s=>isPar(s)?'*':s.toLowerCase()).join('/');
+        if (sameFile.has(ckey)) continue;
+        const local = !c.host || /^(localhost|127\.|0\.0\.0\.0|\[::1\]|\$)/.test(c.host);
+        let best = null;
+        if (local && cs.length) {
+          const cand = new Set(); for (const s of cs) { const l=byLast.get(s.toLowerCase()); if (l) for (const x of l) cand.add(x); }
+          for (const x of cand) {
+            const rs = x.seg; if (!rs.length || !mOk(c.method, x.meth)) continue;
+            const shortC = cs.length < rs.length, n = Math.min(cs.length, rs.length), ro = rs.length - n, co = cs.length - n;
+            let lit = 0, ok = true;
+            for (let i=0;i<n;i++) { const a=rs[ro+i], b=cs[co+i]; const pa=isPar(a), pb=isPar(b); if (pa||pb) continue; if (a.toLowerCase()!==b.toLowerCase()) { ok=false; break; } lit++; }
+            if (!ok || lit<1) continue;
+            const sc = lit*10 - (co+ro)*1.5 + (x.meth===c.method?3:0) + (co+ro===0?2:0) - (shortC?4:0);
+            if (!best || sc>best.sc) best={x,sc};
+          }
+        }
+        let cu=-1, mu=-1, bl=-1; for (const k of (clsByFile.get(id)||[])) for (let i=0;i<k.methods.length;i++) { const ml=k.mlines&&k.mlines[i]; if (ml!=null && ml<=c.line && ml>bl) { bl=ml; cu=k.id; mu=i; } }
+        const ent = {file:f.path, comp:f.comp, method:c.method, path:c.path, line:c.line, host:c.host||null, rt: best?best.x.i:-1, cu, mu};
+        apiCalls.push(ent);
+        if (best) { const to = best.x.r.comp, from = f.comp; if (from>=0 && to>=0 && from!==to) { const k=from+'>'+to; let e=apiEdgeMap.get(k); if(!e){e={s:from,t:to,w:0,eps:new Set(),ex:[]};apiEdgeMap.set(k,e);} e.w++; e.eps.add(best.x.i); if (e.ex.length<10) e.ex.push([f.path, c.method, c.path, best.x.r.file, c.line]); } }
+      }
+    }
+  }
+  const apiEdges = [...apiEdgeMap.values()].map(e=>({s:e.s,t:e.t,w:e.w,eps:e.eps.size,ex:e.ex}));
   onProgress({phase:'Done', pct:100});
   return {
     repo:{owner,name:repo,branch,url:meta.html_url,description:meta.description,stars:meta.stargazers_count,language:meta.language,license:meta.license&&meta.license.spdx_id,topics:meta.topics||[],pushed:meta.pushed_at,size:meta.size,forks:meta.forks_count,homepage:meta.homepage},
     stats:{...stats, sourceFiles:srcFiles.length, scanned:raw.size, scanTargets:toScan.length, budget, languages, testFiles:stats.byKind.test||0},
     files:files.map(f=>({id:f.id,path:f.path,size:f.size,ext:f.ext,kind:f.kind,lang:f.lang,comp:f.comp,scanned:f.scanned,loc:f.loc||0,imports:[...f.imports],importedBy:[...f.importedBy],externals:[...f.externals],routes:f.routes,models:f.models})),
-    classes:classes.map(c=>({id:c.id,name:c.name,kind:c.kind,fn:c.fn?1:0,file:c.file,comp:c.comp,line:c.line,methods:c.methods,mlines:c.mlines,ext:c.ext,impl:c.impl})), classEdges, calls, comps, edges:edgeList, fileEdges, services:services.map(s=>({...s,links:[...s.links.entries()]})),
+    classes:classes.map(c=>({id:c.id,name:c.name,kind:c.kind,fn:c.fn?1:0,file:c.file,comp:c.comp,line:c.line,methods:c.methods,mlines:c.mlines,ext:c.ext,impl:c.impl})), classEdges, calls, apiCalls:apiCalls.slice(0,4000), apiEdges, comps, edges:edgeList, fileEdges, services:services.map(s=>({...s,links:[...s.links.entries()]})),
     entries:entriesU, routes:uniqRoutes, models, env:envList,
     compose:{files:composeInfo, services:composeServices}, docker:dockerInfo, workflows, scripts, makeTargets, procfile, deployTargets,
     infraFiles:infraFiles.map(f=>f.path).slice(0,60),

@@ -17,7 +17,7 @@ const lsGet = k => { try { return localStorage.getItem(k); } catch(e){ return nu
 const lsSet = (k,v) => { try { v==null?localStorage.removeItem(k):localStorage.setItem(k,v); } catch(e){} };
 
 let A = null;
-const UI = {drillMode:'files', tab:'overview', sel:null, layout:'layered', showExt:true, drill:null, tree:{}, selFile:null, apiFilter:'', envFilter:'', treeFilter:''};
+const UI = {showApi:true, apiSel:null, apiComp:'', drillMode:'files', tab:'overview', sel:null, layout:'layered', showExt:true, drill:null, tree:{}, selFile:null, apiFilter:'', envFilter:'', treeFilter:''};
 
 /* ---------------- derived ---------------- */
 let D = null;
@@ -210,6 +210,7 @@ function archNodesEdges(){
       badges:[c.entries.length?'⚡':'', c.cycle?'↻':''].filter(Boolean), weight:c.files.length, r:11+Math.min(24,Math.sqrt(c.files.length)*2.4), title:`${c.label}\n${describeComp(c)}`});
   });
   D.edges.forEach(e=>edges.push({s:'c'+e.s,t:'c'+e.t,w:e.w,back:e.back,raw:e,title:`${A.comps[e.s].label} → ${A.comps[e.t].label}\n${e.w} import${e.w>1?'s':''}${e.back?'\n⚠ goes against the usual layer direction':''}`}));
+  if (UI.showApi) (A.apiEdges||[]).forEach(e=>edges.push({s:'c'+e.s,t:'c'+e.t,w:e.w,kind:'api',apiRaw:e,title:`${A.comps[e.s].label} → ${A.comps[e.t].label}\nHTTP API: ${e.w} call${e.w>1?'s':''} to ${e.eps} endpoint${e.eps>1?'s':''}`}));
   if (UI.showExt) {
     A.services.forEach((s,i)=>{ nodes.push({id:'x'+i, kind:'svc', cat:s.cat, label:s.label, sub:s.cat+(s.inferred?' · inferred':''), icon:CAT_ICON[s.cat], color:'var(--ext)', sidx:i, weight:s.links.length, r:15, title:`${s.label} (${s.cat})\ndetected via ${s.sources.join(', ')}`}); });
     D.svcEdges.forEach(e=>edges.push({s:'c'+e.s,t:e.t,w:e.w,inferred:e.inferred,title:`${A.comps[e.s].label} → ${A.services[+e.t.slice(1)].label}${e.inferred?' (inferred)':''}`}));
@@ -276,6 +277,7 @@ function drawerComp(c){
    <div class="hint">${Object.entries(c.langs).sort((a,b)=>b[1]-a[1]).map(([l,n])=>`${l} ${n}`).join(' · ')}</div>
    ${c.tags.length?`<h5>Built with</h5>${c.tags.map(t=>`<span class="tag fw">${esc(t.label)}</span>`).join('')}`:''}
    ${c.entries.length?`<h5>Entry points</h5><ul class="clean">${c.entries.slice(0,6).map(p=>`<li>⚡ <a href="${ghBlob(p)}" target="_blank" rel="noopener" class="mono">${esc(p)}</a></li>`).join('')}</ul>`:''}
+   ${(A.apiEdges||[]).some(e=>e.s===c.id||e.t===c.id)?`<h5>HTTP API links</h5><ul class="clean">${(A.apiEdges||[]).filter(e=>e.s===c.id).map(e=>`<li>calls the API of ${compLink(e.t)} <span class="w">${e.w} call${e.w>1?'s':''} · ${e.eps} endpoint${e.eps>1?'s':''}</span></li>`).join('')}${(A.apiEdges||[]).filter(e=>e.t===c.id).map(e=>`<li>called over HTTP by ${compLink(e.s)} <span class="w">${e.w} call${e.w>1?'s':''}</span></li>`).join('')}</ul><a class="btn sm" data-gotoapi>See request flow →</a>`:''}
    ${eps.length?`<h5>Endpoints (${c.endpoints})</h5><ul class="clean">${eps.map(r=>`<li><span class="method m-${r.method}">${r.method}</span> <span class="mono">${esc(r.path)}</span></li>`).join('')}</ul>`:''}
    <h5>Depends on (${out.length})</h5>${out.length?`<ul class="clean">${out.map(e=>`<li>${compLink(e.t)} <span class="w">${e.w}×</span><div class="ex">${e.ex.slice(0,2).map(x=>esc(base(x[0]))+' → '+esc(base(x[1]))).join('<br>')}</div></li>`).join('')}</ul>`:'<div class="hint">Nothing inside the repo (leaf).</div>'}
    <h5>Used by (${inc.length})</h5>${inc.length?`<ul class="clean">${inc.map(e=>`<li>${compLink(e.s)} <span class="w">${e.w}×</span></li>`).join('')}</ul>`:'<div class="hint">Not imported by other components — likely an entry point or unused.</div>'}
@@ -411,6 +413,10 @@ function drawerSvc(s){
   wireDrawer();
 }
 function drawerEdge(e){
+  if (e.kind==='api' && e.apiRaw) { const r=e.apiRaw; const calls=(A.apiCalls||[]).filter(c=>c.comp===r.s&&c.rt>=0&&A.routes[c.rt].comp===r.t);
+    $('#drawer').innerHTML = `<h4>${compLink(r.s)} → ${compLink(r.t)}</h4><div style="margin:6px 0"><span class="pill">HTTP API</span> ${r.w} call${r.w>1?'s':''} to ${r.eps} endpoint${r.eps>1?'s':''}</div>
+     <h5>Calls</h5><ul class="clean">${calls.slice(0,40).map(c=>{ const rt=A.routes[c.rt]; return `<li style="font-size:12px"><span class="method m-${c.method}">${c.method}</span> <span class="mono">${esc(c.path)}</span><br><span class="hint">in </span><a class="mono" href="${ghBlob(c.file)}#L${c.line}" target="_blank" rel="noopener">${esc(base(c.file))}:${c.line}</a>${c.cu>=0?` <span class="hint">(${esc(mname(c.cu,c.mu))})</span>`:''}<br><span class="hint">→ handled by </span><span class="mono">${esc(rt.method)} ${esc(rt.path)}</span> <span class="hint">in ${esc(base(rt.file))}</span></li>`; }).join('')}</ul>${calls.length>40?`<div class="hint">+${calls.length-40} more — see the API tab.</div>`:''}<div style="margin-top:10px"><a class="btn sm" id="toApiTab">Open in API tab</a></div>`;
+    wireDrawer(); const b=$('#toApiTab'); if(b) b.onclick=()=>showTab('api'); return; }
   const r = e.raw; if(!r){ return; }
   $('#drawer').innerHTML = `<h4>${compLink(r.s)} → ${compLink(r.t)}</h4><div style="margin:6px 0">${r.w} import${r.w>1?'s':''}</div>${e.back?'<div class="callout warn">Goes against the usual layer direction (a lower layer importing a higher one). Worth a look if you care about clean layering.</div>':''}
    <h5>Examples</h5><ul class="clean">${r.ex.map(x=>`<li class="mono" style="font-size:11.5px"><a href="${ghBlob(x[0])}" target="_blank" rel="noopener">${esc(x[0])}</a><br>→ <a href="${ghBlob(x[1])}" target="_blank" rel="noopener">${esc(x[1])}</a></li>`).join('')}</ul>`;
@@ -433,6 +439,7 @@ function wireDrawer(){
   document.querySelectorAll('#drawer [data-comp]').forEach(a=>a.onclick=()=>selectComp(+a.dataset.comp));
   document.querySelectorAll('#drawer [data-class]').forEach(a=>a.onclick=()=>focusClass(+a.dataset.class));
   document.querySelectorAll('#drawer [data-method]').forEach(a=>a.onclick=()=>{ const [c,m]=a.dataset.method.split('.').map(Number); focusMethod(c,m); });
+  document.querySelectorAll('#drawer [data-gotoapi]').forEach(a=>a.onclick=()=>showTab('api'));
   document.querySelectorAll('#drawer [data-svc]').forEach(a=>a.onclick=()=>{ const i=+a.dataset.svc; UI.sel='x'+i; GRAPH.select(UI.sel); GRAPH.focus&&GRAPH.focus(UI.sel); drawerSvc(A.services[i]); });
 }
 function drawerHome(){
@@ -487,7 +494,7 @@ function renderOverview(){
     <div class="stat"><b>${fmt(s.totalFiles)}</b><span>files in repo</span></div><div class="stat"><b>${fmt(s.sourceFiles)}</b><span>source files</span></div>
     <div class="stat"><b>${A.comps.length}</b><span>components</span></div><div class="stat"><b>${D.edges.length}</b><span>component links</span></div>
     <div class="stat"><b>${A.services.length}</b><span>external systems</span></div><div class="stat"><b>${A.routes.filter(x=>x.method!=='PAGE').length}</b><span>endpoints</span></div>
-    <div class="stat"><b>${A.models.length}</b><span>data models</span></div><div class="stat"><b>${A.entries.length}</b><span>entry points</span></div>${(A.classes||[]).some(k=>!k.fn)?`<div class="stat"><b>${fmt(A.classes.filter(k=>!k.fn).length)}</b><span>classes & types</span></div><div class="stat"><b>${(A.classEdges||[]).filter(e=>e[2]>0).length}</b><span>inheritance links</span></div>${(A.calls||[]).length?`<div class="stat"><b>${fmt(A.calls.length)}</b><span>function & method calls</span></div>`:''}`:''}${(A.classes||[]).some(k=>k.fn)&&!(A.classes||[]).some(k=>!k.fn)?`<div class="stat"><b>${fmt(A.classes.reduce((a,k)=>a+k.methods.length,0))}</b><span>functions</span></div><div class="stat"><b>${fmt((A.calls||[]).length)}</b><span>function calls</span></div>`:''}</div>
+    ${(A.apiCalls||[]).filter(c=>c.rt>=0).length?`<div class="stat"><b>${(A.apiCalls||[]).filter(c=>c.rt>=0).length}</b><span>client → API calls</span></div>`:''}<div class="stat"><b>${A.models.length}</b><span>data models</span></div><div class="stat"><b>${A.entries.length}</b><span>entry points</span></div>${(A.classes||[]).some(k=>!k.fn)?`<div class="stat"><b>${fmt(A.classes.filter(k=>!k.fn).length)}</b><span>classes & types</span></div><div class="stat"><b>${(A.classEdges||[]).filter(e=>e[2]>0).length}</b><span>inheritance links</span></div>${(A.calls||[]).length?`<div class="stat"><b>${fmt(A.calls.length)}</b><span>function & method calls</span></div>`:''}`:''}${(A.classes||[]).some(k=>k.fn)&&!(A.classes||[]).some(k=>!k.fn)?`<div class="stat"><b>${fmt(A.classes.reduce((a,k)=>a+k.methods.length,0))}</b><span>functions</span></div><div class="stat"><b>${fmt((A.calls||[]).length)}</b><span>function calls</span></div>`:''}</div>
    <div class="two" style="margin-top:6px">
     <div><h3>Languages</h3><div class="box"><div class="bar" style="height:12px">${L.slice(0,10).map((l,i)=>`<i style="width:${l.bytes/tot*100}%;background:hsl(${(i*57+200)%360} 65% 60%)" title="${l.name}"></i>`).join('')}</div>
      <div class="legend">${L.slice(0,10).map((l,i)=>`<span><i style="background:hsl(${(i*57+200)%360} 65% 60%)"></i>${l.name} ${Math.round(l.bytes/tot*100)}% · ${l.files} files</span>`).join('')}</div></div>
@@ -504,12 +511,13 @@ function renderArch(){
   if (!A.comps.length) { $('#panel').innerHTML='<div class="wrap"><div class="callout">No source code components were found in this repo (it may be docs, config or assets only).</div></div>'; return; }
   $('#panel').innerHTML = `<div class="archwrap"><div class="canvas"><svg id="g1"></svg>
     <div class="toolbar"><div class="grp"><button data-l="layered" class="${UI.layout==='layered'?'on':''}">Layers</button><button data-l="force" class="${UI.layout==='force'?'on':''}">Network</button></div>
-     <label><input type="checkbox" id="extChk" ${UI.showExt?'checked':''}> External systems</label><button class="btn sm" id="fitBtn">Fit</button><input type="search" id="findIn" placeholder="Find component or class…" list="complist"><datalist id="complist">${A.comps.map(c=>`<option value="${esc(c.label)}">`).join('')}${(A.classes||[]).filter(k=>!k.fn).slice(0,4000).map(k=>`<option value="${esc(k.name)}">`).join('')}</datalist></div>
-    <div class="keybox"><div class="row"><span><i class="ln" style="border-color:var(--out)"></i>depends on</span><span><i class="ln" style="border-color:var(--in)"></i>used by</span><span><i class="ln" style="border-color:var(--warn);border-top-style:dashed"></i>against layer flow</span><span>⚡ entry · ↻ cycle</span></div></div></div>
+     <label><input type="checkbox" id="extChk" ${UI.showExt?'checked':''}> External systems</label>${(A.apiEdges||[]).length?`<label><input type="checkbox" id="apiChk" ${UI.showApi?'checked':''}> API calls</label>`:''}<button class="btn sm" id="fitBtn">Fit</button><input type="search" id="findIn" placeholder="Find component or class…" list="complist"><datalist id="complist">${A.comps.map(c=>`<option value="${esc(c.label)}">`).join('')}${(A.classes||[]).filter(k=>!k.fn).slice(0,4000).map(k=>`<option value="${esc(k.name)}">`).join('')}</datalist></div>
+    <div class="keybox"><div class="row"><span><i class="ln" style="border-color:var(--out)"></i>depends on</span><span><i class="ln" style="border-color:var(--in)"></i>used by</span><span><i class="ln" style="border-color:var(--warn);border-top-style:dashed"></i>against layer flow</span>${(A.apiEdges||[]).length?'<span><i class="ln" style="border-color:var(--acc);border-top-style:dashed"></i>HTTP API call</span>':''}<span>⚡ entry · ↻ cycle</span></div></div></div>
     <aside class="drawer" id="drawer"></aside></div>`;
   GRAPH = GraphView($('#g1'),{node:selectNode, edge:drawerEdge, background:()=>{ UI.sel=null; GRAPH.select(null); if(UI.drill==null) drawerHome(); }});
   document.querySelectorAll('.toolbar [data-l]').forEach(b=>b.onclick=()=>{ UI.layout=b.dataset.l; UI.drill=null; document.querySelectorAll('.toolbar [data-l]').forEach(x=>x.classList.toggle('on',x===b)); drawArch(); });
   $('#extChk').onchange=e=>{ UI.showExt=e.target.checked; drawArch(); };
+  if ($('#apiChk')) $('#apiChk').onchange=e=>{ UI.showApi=e.target.checked; drawArch(); };
   $('#fitBtn').onclick=()=>GRAPH.fit();
   $('#findIn').onchange=e=>{ const v=e.target.value, lv=v.toLowerCase(); const c=A.comps.find(c=>c.label===v); if(c) return selectComp(c.id); const k=(A.classes||[]).find(k=>!k.fn&&k.name===v)||(A.classes||[]).find(k=>!k.fn&&k.name.toLowerCase()===lv); if(k) return focusClass(k.id); const c2=A.comps.find(c=>c.label.toLowerCase().includes(lv)); if(c2) return selectComp(c2.id); const k2=(A.classes||[]).find(k=>!k.fn&&k.name.toLowerCase().includes(lv)); if(k2) focusClass(k2.id); };
   UI.drill=null; drawArch(); if (UI.sel && UI.sel[0]==='c') drawerComp(A.comps[+UI.sel.slice(1)]); else drawerHome();
@@ -551,18 +559,71 @@ function renderFlows(){
 }
 /* node ids in paths are numeric comp ids */
 
+let AGRAPH=null;
+function apiGraphData(){
+  const calls=(A.apiCalls||[]).filter(c=>c.rt>=0 && (!UI.apiComp || String(c.comp)===UI.apiComp));
+  const N=new Map(), E=new Map(), fileId=new Map(A.files.map(f=>[f.path,f.id]));
+  const node=(id,o)=>{ let n=N.get(id); if(!n){ if(N.size>=160) return null; n={id,weight:0,kind:'comp',...o}; N.set(id,n); } return n; };
+  const edge=(s,t,o)=>{ const k=s+'>'+t; let e=E.get(k); if(!e){ e={s,t,w:0,...o}; E.set(k,e); } e.w++; };
+  const cc = id => id>=0?A.comps[id]:null; const colr = id => { const c=cc(id); return c?COMP_COLOR(c):undefined; };
+  for (const c of calls) {
+    const rt=A.routes[c.rt]; const eid='e'+c.rt;
+    const en=node(eid,{col:2,label:rt.method+' '+rt.path,sub:rt.comp>=0?A.comps[rt.comp].label:base(rt.file),color:colr(rt.comp),epRt:c.rt,title:`${rt.method} ${rt.path}\nhandled in ${rt.file}`}); if(!en) continue; en.weight++;
+    let src;
+    if (c.cu>=0) {
+      const k=A.classes[c.cu], uk=c.cu+'.'+c.mu; src='u'+uk;
+      const un=node(src,{col:1,label:k.fn?k.methods[c.mu]:k.name+'.'+k.methods[c.mu],sub:base(c.file),color:colr(c.comp),unitKey:uk,title:mname(c.cu,c.mu)+'\n'+c.file}); if(!un) continue; un.weight++;
+      if (!un.seeded) { un.seeded=true; for (const [ca,ma] of (D.mIn.get(uk)||[])) { const kf=A.classes[ca]; if (A.files[kf.file].path===c.file) continue; const fid='f'+kf.file; const fn=node(fid,{col:0,label:base(A.files[kf.file].path),sub:A.files[kf.file].comp>=0?A.comps[A.files[kf.file].comp].label:'',color:colr(A.files[kf.file].comp),fileKey:kf.file,title:A.files[kf.file].path}); if(!fn) break; fn.weight++; edge(fid,src,{kind:'call',title:`${mname(ca,ma)} calls ${mname(c.cu,c.mu)}`}); } }
+    } else {
+      const fid_=fileId.get(c.file); src='f'+fid_; const fn=node(src,{col:0,label:base(c.file),sub:'calls the API directly',color:colr(c.comp),fileKey:fid_,title:c.file}); if(!fn) continue; fn.weight++;
+    }
+    edge(src,eid,{kind:'api',title:`${c.method} ${c.path}\n${c.file}:${c.line}`});
+  }
+  return {nodes:[...N.values()], edges:[...E.values()], total:calls.length};
+}
+function apiCallRow(c){ const rt=c.rt>=0?A.routes[c.rt]:null; return `<li style="font-size:12px"><span class="method m-${c.method}">${c.method}</span> <span class="mono">${esc(c.path)}</span>${c.host?` <span class="pill">${esc(c.host)}</span>`:''}<br><a class="mono" href="${ghBlob(c.file)}#L${c.line}" target="_blank" rel="noopener">${esc(short(c.file,46))}:${c.line}</a>${c.cu>=0?` <span class="hint">(${esc(mname(c.cu,c.mu))})</span>`:''}${rt?`<br><span class="hint">→ handled by <span class="mono">${esc(rt.method)} ${esc(rt.path)}</span> in ${esc(base(rt.file))}</span>`:''}</li>`; }
+function apiDetail(n){
+  const all=A.apiCalls||[]; let title, body, list=[];
+  if (n.epRt!=null) { const rt=A.routes[n.epRt]; list=all.filter(c=>c.rt===n.epRt); title=`<span class="method m-${rt.method}">${rt.method}</span> <span class="mono">${esc(rt.path)}</span>`; body=`<div class="hint">Handled in <a class="mono" href="${ghBlob(rt.file)}" target="_blank" rel="noopener">${esc(rt.file)}</a>${rt.comp>=0?' · '+compLink(rt.comp):''}</div><h5>${list.length} client call${list.length>1?'s':''}</h5>`; }
+  else if (n.unitKey) { const [cu,mu]=n.unitKey.split('.').map(Number); list=all.filter(c=>c.cu===cu&&c.mu===mu&&c.rt>=0); const callers=D.mIn.get(n.unitKey)||[]; title=`<b>${esc(mname(cu,mu))}</b>`; body=`<div class="hint">API client function in <a class="mono" href="${ghBlob(A.files[A.classes[cu].file].path)}" target="_blank" rel="noopener">${esc(A.files[A.classes[cu].file].path)}</a></div><h5>Makes ${list.length} HTTP call${list.length>1?'s':''}</h5>`; n._tail=`<h5>Called by ${callers.length} function${callers.length!==1?'s':''}</h5><div>${callers.slice(0,30).map(([a,b])=>`<span class="tag mono">${esc(mname(a,b))}</span>`).join('')||'<span class="hint">Nothing in the scanned code calls it directly.</span>'}</div>`; }
+  else { const f=A.files[n.fileKey]; list=all.filter(c=>c.file===f.path&&c.rt>=0); title=`<b>${esc(base(f.path))}</b>`; body=`<div class="hint mono">${esc(f.path)}</div><h5>${list.length} HTTP call${list.length>1?'s':''} from this file</h5>`; }
+  $('#apiDetail').innerHTML = `<div class="box"><div>${title}</div>${body}<ul class="clean">${list.slice(0,30).map(apiCallRow).join('')}</ul>${list.length>30?`<div class="hint">+${list.length-30} more</div>`:''}${n._tail||''}</div>`;
+  document.querySelectorAll('#apiDetail [data-comp]').forEach(a=>a.onclick=()=>{ showTab('arch'); setTimeout(()=>selectComp(+a.dataset.comp),50); });
+}
 function renderApi(){
   const routes=A.routes, byMethod={}; routes.forEach(r=>byMethod[r.method]=(byMethod[r.method]||0)+1);
   const f=UI.apiFilter.toLowerCase();
-  const rs = routes.filter(r=>!f||(r.path+' '+r.file+' '+r.method).toLowerCase().includes(f));
+  const calls=A.apiCalls||[]; const matched=calls.filter(c=>c.rt>=0), unmatched=calls.filter(c=>c.rt<0);
+  const callsBy=new Map(); matched.forEach(c=>callsBy.set(c.rt,(callsBy.get(c.rt)||0)+1));
+  const rs = routes.map((r,i)=>({r,i})).filter(({r})=>!f||(r.path+' '+r.file+' '+r.method).toLowerCase().includes(f));
   const ms = A.models.filter(m=>!f||(m.name+' '+m.file+' '+m.kind).toLowerCase().includes(f));
-  $('#panel').innerHTML = `<div class="wrap"><input class="filter" id="apiF" placeholder="Filter routes & models…" value="${esc(UI.apiFilter)}">
+  const clientComps=[...new Set(matched.map(c=>c.comp))].filter(x=>x>=0);
+  const gd = matched.length? apiGraphData() : null;
+  const colMax = gd? Math.max(...[0,1,2].map(k=>gd.nodes.filter(n=>n.col===k).length)) : 0;
+  const gh = Math.max(280, Math.min(620, Math.min(colMax,9)*70+90 + (colMax>9?Math.ceil(colMax/9)*0:0)));
+  const hosts=new Map(); unmatched.forEach(c=>{ const k=c.host||'(same origin — no matching route found)'; hosts.set(k,(hosts.get(k)||0)+1); });
+  $('#panel').innerHTML = `<div class="wrap">
+   ${matched.length?`<h3>Frontend → backend calls <small>${matched.length} call${matched.length>1?'s':''} reach ${callsBy.size} of your endpoints</small></h3>
+    <p class="hint">Left to right: the UI code that uses the client, the function that sends the request, and the endpoint that handles it. Requests are matched to routes by method and path (a prefix like <span class="mono">/api/v1</span> is ignored). Click anything for call sites.</p>
+    ${clientComps.length>1?`<div style="margin:6px 0"><label class="hint">Only calls from <select id="apiComp"><option value="">all components</option>${clientComps.map(id=>`<option value="${id}" ${String(id)===UI.apiComp?'selected':''}>${esc(A.comps[id].label)}</option>`).join('')}</select></label></div>`:''}
+    <div class="box" style="padding:0;height:${gh}px;position:relative;overflow:hidden"><div class="canvas" style="position:absolute;inset:0"><svg id="g3"></svg></div></div>
+    <div id="apiDetail" style="margin-top:10px"><div class="hint">Click a node to see exactly where each request is made.</div></div>`
+    :`<div class="callout">No frontend → backend HTTP calls were matched to routes${calls.length?` (${calls.length} client request${calls.length>1?'s':''} found, none matched a route in this repo)`:''}. Supported clients: fetch, axios and similar wrappers, Angular HttpClient, SWR, generated OpenAPI SDKs, Python requests/httpx, Go net/http, Spring RestTemplate/WebClient and .NET HttpClient.</div>`}
+   <input class="filter" id="apiF" style="margin-top:18px" placeholder="Filter routes & models…" value="${esc(UI.apiFilter)}">
    <h3>HTTP surface <small>${routes.length} routes${Object.keys(byMethod).length?' · '+Object.entries(byMethod).map(([m,n])=>m+' '+n).join(' · '):''}</small></h3>
-   ${rs.length?`<table><tr><th style="width:70px">Method</th><th>Path</th><th>Component</th><th>Defined in</th></tr>${rs.slice(0,500).map(r=>`<tr><td><span class="method m-${r.method}">${r.method}</span></td><td class="mono">${esc(r.path)}</td><td>${r.comp>=0?compLink(r.comp):''}</td><td><a class="mono" href="${ghBlob(r.file)}" target="_blank" rel="noopener">${esc(short(r.file,52))}</a></td></tr>`).join('')}</table>${rs.length>500?`<p class="hint">Showing 500 of ${rs.length}.</p>`:''}`:'<div class="callout">No HTTP routes detected (supported: Express/Fastify/Koa, Next.js file routes, NestJS, Flask, FastAPI, Django, Spring, ASP.NET, Rails, Laravel, Go routers, Actix/Axum).</div>'}
+   ${rs.length?`<table><tr><th style="width:70px">Method</th><th>Path</th><th>Component</th><th>Defined in</th>${matched.length?'<th>Called from UI</th>':''}</tr>${rs.slice(0,500).map(({r,i})=>`<tr><td><span class="method m-${r.method}">${r.method}</span></td><td class="mono">${esc(r.path)}</td><td>${r.comp>=0?compLink(r.comp):''}</td><td><a class="mono" href="${ghBlob(r.file)}" target="_blank" rel="noopener">${esc(short(r.file,52))}</a></td>${matched.length?`<td>${callsBy.get(i)?`<a class="link" data-rt="${i}">${callsBy.get(i)} call${callsBy.get(i)>1?'s':''}</a>`:'<span class="hint">–</span>'}</td>`:''}</tr>`).join('')}</table>${rs.length>500?`<p class="hint">Showing 500 of ${rs.length}.</p>`:''}`:'<div class="callout">No HTTP routes detected (supported: Express/Fastify/Koa, Next.js file routes, NestJS, Flask, FastAPI, Django, Spring, ASP.NET, Rails, Laravel, Go routers, Actix/Axum).</div>'}
+   ${unmatched.length?`<h3>Client requests with no matching route <small>${unmatched.length} · ${[...hosts.entries()].slice(0,4).map(([h,n])=>esc(h)+' '+n).join(' · ')}</small></h3><details class="box"><summary>Show requests (external APIs, other services, or routes this scan could not see)</summary><ul class="clean" style="margin-top:8px">${unmatched.slice(0,80).map(apiCallRow).join('')}</ul></details>`:''}
    <h3>Data model <small>${A.models.length} tables / entities / models</small></h3>
-   ${ms.length?`<table><tr><th>Name</th><th>Kind</th><th>Component</th><th>Defined in</th></tr>${ms.slice(0,500).map(m=>`<tr><td><b>${esc(m.name)}</b></td><td><span class="pill">${esc(m.kind)}</span></td><td>${m.comp>=0?compLink(m.comp):''}</td><td><a class="mono" href="${ghBlob(m.file)}" target="_blank" rel="noopener">${esc(short(m.file,52))}</a></td></tr>`).join('')}</table>`:'<div class="callout">No ORM models / SQL tables detected.</div>'}</div>`;
+   ${ms.length?`<table><tr><th>Name</th><th>Kind</th><th>Component</th><th>Defined in</th></tr>${ms.slice(0,500).map(m=>`<tr><td><b>${esc(m.name)}</b></td><td><span class="pill">${esc(m.kind)}</span></td><td>${m.comp>=0?compLink(m.comp):''}</td><td><a class="mono" href="${ghBlob(m.file)}" target="_blank" rel="noopener">${esc(short(m.file,52))}</a></td></tr>`).join('')}</table>`:'<div class="callout">No data models detected.</div>'}</div>`;
   $('#apiF').oninput=e=>{ UI.apiFilter=e.target.value; const pos=e.target.selectionStart; renderApi(); const i=$('#apiF'); i.focus(); i.setSelectionRange(pos,pos); };
   document.querySelectorAll('#panel [data-comp]').forEach(a=>a.onclick=()=>{ showTab('arch'); setTimeout(()=>selectComp(+a.dataset.comp),50); });
+  if ($('#apiComp')) $('#apiComp').onchange=e=>{ UI.apiComp=e.target.value; renderApi(); };
+  if (gd) {
+    AGRAPH = GraphView($('#g3'),{node:n=>{ AGRAPH.select(n.id); apiDetail(n); }, edge:()=>{}, background:()=>{ AGRAPH.select(null); $('#apiDetail').innerHTML='<div class="hint">Click a node to see exactly where each request is made.</div>'; }});
+    const L = layeredLayout(gd.nodes,gd.edges,n=>n.col,{titles:['UI code that uses the client','Function that sends the request','Backend endpoint'],h:52,maxRows:10});
+    AGRAPH.set(gd.nodes,gd.edges,'layered',L); requestAnimationFrame(()=>AGRAPH.fit());
+    document.querySelectorAll('#panel [data-rt]').forEach(a=>a.onclick=()=>{ const id='e'+a.dataset.rt, n=AGRAPH.byId.get(id); window.scrollTo&&$('#g3').scrollIntoView({block:'center',behavior:'smooth'}); if(n){ AGRAPH.select(id); AGRAPH.focus(id); apiDetail(n); } else apiDetail({epRt:+a.dataset.rt}); });
+  } else document.querySelectorAll('#panel [data-rt]').forEach(a=>a.onclick=()=>apiDetail({epRt:+a.dataset.rt}));
 }
 
 let RGRAPH=null;
@@ -652,6 +713,7 @@ function mermaid(){
   if (A.services.length) { lines.push('  subgraph EXT["External systems"]'); A.services.forEach((s,i)=>lines.push(`    x${i}[("${q(s.label)}")]`)); lines.push('  end'); }
   D.edges.forEach(e=>lines.push(`  c${e.s} ${e.back?'-.->':'-->'}|${e.w}| c${e.t}`));
   A.services.forEach((s,i)=>s.links.forEach(l=>lines.push(`  c${l[0]} -.-> x${i}`)));
+  (A.apiEdges||[]).forEach(e=>lines.push(`  c${e.s} -. "HTTP API ×${e.w}" .-> c${e.t}`));
   return lines.join('\n');
 }
 function classMermaid(){
