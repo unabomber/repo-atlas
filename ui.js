@@ -17,7 +17,7 @@ const lsGet = k => { try { return localStorage.getItem(k); } catch(e){ return nu
 const lsSet = (k,v) => { try { v==null?localStorage.removeItem(k):localStorage.setItem(k,v); } catch(e){} };
 
 let A = null;
-const UI = {tab:'overview', sel:null, layout:'layered', showExt:true, drill:null, tree:{}, selFile:null, apiFilter:'', envFilter:'', treeFilter:''};
+const UI = {drillMode:'files', tab:'overview', sel:null, layout:'layered', showExt:true, drill:null, tree:{}, selFile:null, apiFilter:'', envFilter:'', treeFilter:''};
 
 /* ---------------- derived ---------------- */
 let D = null;
@@ -28,7 +28,9 @@ function derive(){
   const svcEdges = []; A.services.forEach((s,i)=>s.links.forEach(([cid,w])=>svcEdges.push({s:cid,t:'x'+i,w,inferred:s.inferred})));
   const inc = comps.map(()=>[]), out = comps.map(()=>[]);
   edges.forEach(e=>{ out[e.s].push(e); inc[e.t].push(e); });
-  D = {edges, svcEdges, inc, out, col};
+  const cOut = new Map(), cInc = new Map();
+  (A.classEdges||[]).forEach(([a,b,t])=>{ if(!cOut.has(a))cOut.set(a,[]); cOut.get(a).push([b,t]); if(!cInc.has(b))cInc.set(b,[]); cInc.get(b).push([a,t]); });
+  D = {edges, svcEdges, inc, out, col, cOut, cInc};
 }
 function describeComp(c){
   const langs = Object.entries(c.langs).sort((a,b)=>b[1]-a[1]).slice(0,2).map(x=>x[0]).join(' / ');
@@ -49,7 +51,7 @@ function describeComp(c){
 function GraphView(svg, cb){
   const NS = 'http://www.w3.org/2000/svg';
   const mk = (n,a={},p) => { const e=document.createElementNS(NS,n); for (const k in a) e.setAttribute(k,a[k]); if(p)p.appendChild(e); return e; };
-  svg.innerHTML = `<defs>${[['n','var(--edge)'],['o','var(--out)'],['i','var(--in)'],['w','var(--warn)']].map(([id,c])=>`<marker id="a-${id}-${svg.id}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 1 L10 5 L0 9 z" fill="${c}"/></marker>`).join('')}</defs><g class="vp"><g class="lanes"></g><g class="hdr"></g><g class="edges"></g><g class="nodes"></g></g>`;
+  svg.innerHTML = `<defs>${[['n','var(--edge)'],['o','var(--out)'],['i','var(--in)'],['w','var(--warn)']].map(([id,c])=>`<marker id="a-${id}-${svg.id}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 1 L10 5 L0 9 z" fill="${c}"/></marker>`).join('')+`<marker id="a-x-${svg.id}" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="10" markerHeight="10" orient="auto-start-reverse"><path d="M1 1 L11 6 L1 11 z" fill="var(--card)" stroke="var(--acc)" stroke-width="1.5"/></marker>`}</defs><g class="vp"><g class="lanes"></g><g class="hdr"></g><g class="edges"></g><g class="nodes"></g></g>`;
   const vp = svg.querySelector('.vp'), gL = svg.querySelector('.lanes'), gH = svg.querySelector('.hdr'), gE = svg.querySelector('.edges'), gN = svg.querySelector('.nodes');
   const G = {nodes:[], edges:[], mode:'layered', byId:new Map(), view:{x:0,y:0,k:1}, sel:null, nodeEls:new Map(), edgeEls:[]};
   const mid = id => `url(#a-${id}-${svg.id})`;
@@ -103,8 +105,8 @@ function GraphView(svg, cb){
     const maxw = Math.max(1,...G.edges.map(e=>e.w||0));
     for (const e of G.edges) {
       if (!G.byId.has(e.s)||!G.byId.has(e.t)) continue;
-      const g = mk('g',{class:'edge'+(e.back?' back':'')+(e.inferred?' inf':'')},gE);
-      const line = mk('path',{class:'line','stroke-width':(1+Math.log2(1+(e.w||0))*0.7).toFixed(2),'marker-end':mid(e.back?'w':'n')},g);
+      const g = mk('g',{class:'edge'+(e.back?' back':'')+(e.inferred?' inf':'')+(e.kind?' k-'+e.kind:'')},gE);
+      const line = mk('path',{class:'line','stroke-width':(1+Math.log2(1+(e.w||0))*0.7).toFixed(2),'marker-end':mid(e.kind==='extends'||e.kind==='implements'?'x':e.back?'w':'n')},g);
       const hit = mk('path',{class:'hit'},g);
       const ti = mk('title',{},g); ti.textContent = e.title||'';
       g.addEventListener('click',ev=>{ ev.stopPropagation(); cb.edge&&cb.edge(e); });
@@ -135,8 +137,8 @@ function GraphView(svg, cb){
     }
     for (const o of G.edgeEls) {
       const {e,g,line}=o; g.classList.remove('out','in','tr','dim');
-      let m = e.back?'w':'n';
-      if (id) { if (e.s===id){ g.classList.add('out'); m='o'; } else if (e.t===id){ g.classList.add('in'); m='i'; }
+      let m = e.kind==='extends'||e.kind==='implements'?'x':e.back?'w':'n';
+      if (id) { if (e.s===id){ g.classList.add('out'); if(m!=='x') m='o'; } else if (e.t===id){ g.classList.add('in'); if(m!=='x') m='i'; }
         else if ((dn.has(e.s)&&dn.has(e.t))||(up.has(e.s)&&up.has(e.t))||(dn.has(e.t)&&e.s===id)) g.classList.add('tr'); else g.classList.add('dim'); }
       line.setAttribute('marker-end',mid(m));
     }
@@ -238,6 +240,7 @@ function drawDrill(cid){
 
 /* ---------------- drawer ---------------- */
 function selectNode(n){
+  if (n.kid!=null) { UI.sel=null; GRAPH.select('k'+n.kid); drawerClass(A.classes[n.kid]); return; }
   if (n.kind==='comp'||n.kind==='ghost') { UI.sel='c'+n.cid; GRAPH.select(UI.sel); drawerComp(A.comps[n.cid]); }
   else if (n.kind==='svc') { UI.sel=n.id; GRAPH.select(UI.sel); drawerSvc(A.services[n.sidx]); }
   else if (n.kind==='file') { drawerFile(A.files[n.fid]); GRAPH.select(n.id); }
@@ -257,7 +260,7 @@ function drawerComp(c){
    <div class="hint" style="font-size:13px;color:var(--text)">${esc(describeComp(c))}</div>
    <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
      <select class="btn sm" id="roleSel" title="Reassign this component's layer">${ROLE_ORDER.map(r=>`<option value="${r}"${r===c.role?' selected':''}>${ROLE_LABEL[r]}</option>`).join('')}</select>
-     <button class="btn sm" id="drillBtn">Explore files →</button>
+     <button class="btn sm" id="drillBtn">Explore files →</button>${c.classCount?`<button class="btn sm" id="clsBtn">Explore classes (${c.classCount}) →</button>`:''}
      ${c.path?`<a class="btn sm" href="${ghTree(c.path)}" target="_blank" rel="noopener">GitHub ↗</a>`:''}
    </div>
    ${c.pkg?`<h5>Package</h5><div class="mono">${esc(c.pkg.name||'')} <span class="hint">(${esc(c.pkg.eco)})</span></div>`:''}
@@ -269,14 +272,74 @@ function drawerComp(c){
    <h5>Depends on (${out.length})</h5>${out.length?`<ul class="clean">${out.map(e=>`<li>${compLink(e.t)} <span class="w">${e.w}×</span><div class="ex">${e.ex.slice(0,2).map(x=>esc(base(x[0]))+' → '+esc(base(x[1]))).join('<br>')}</div></li>`).join('')}</ul>`:'<div class="hint">Nothing inside the repo (leaf).</div>'}
    <h5>Used by (${inc.length})</h5>${inc.length?`<ul class="clean">${inc.map(e=>`<li>${compLink(e.s)} <span class="w">${e.w}×</span></li>`).join('')}</ul>`:'<div class="hint">Not imported by other components — likely an entry point or unused.</div>'}
    ${svcs.length?`<h5>Talks to</h5><ul class="clean">${svcs.map(x=>`<li>${CAT_ICON[x.s.cat]||''} <a class="link" data-svc="${x.i}">${esc(x.s.label)}</a> <span class="w">${x.s.inferred?'inferred':x.l[1]+' files'}</span></li>`).join('')}</ul>`:''}
+   ${c.classCount?`<h5>Top classes / types</h5><ul class="clean">${topClasses(c.id,8).map(k=>`<li><a class="link" data-class="${k.id}">${esc(k.name)}</a> <span class="pill">${esc(k.kind)}</span><span class="w">${k.methods.length?k.methods.length+' methods':''}</span></li>`).join('')}</ul>`:''}
    <h5>Key files</h5><ul class="clean">${key.map(f=>`<li><a href="${ghBlob(f.path)}" target="_blank" rel="noopener" class="mono">${esc(short(f.path,44))}</a><span class="w">${f.importedBy.length?'used by '+f.importedBy.length:fmtB(f.size)}</span></li>`).join('')}</ul>`;
   wireDrawer();
   $('#roleSel').onchange = e => { c.role=e.target.value; c.roleGuessed=false; derive(); drawArch(); drawerComp(c); };
-  $('#drillBtn').onclick = () => { UI.drill=c.id; drawDrill(c.id); drawerDrillHead(c); };
+  $('#drillBtn').onclick = () => { UI.drill=c.id; UI.drillMode='files'; drawDrill(c.id); drawerDrillHead(c); };
+  if ($('#clsBtn')) $('#clsBtn').onclick = () => { UI.drill=c.id; UI.drillMode='classes'; drawClasses(c.id); drawerDrillHead(c); };
 }
 function drawerDrillHead(c){
-  $('#drawer').innerHTML = `<h4>${esc(c.label)}</h4><div class="hint">File-level view: circles are files (size ∝ bytes), arrows are imports. Dashed circles are other components these files touch.</div><div style="margin:10px 0"><button class="btn sm" id="backBtn">← Back to architecture</button></div><div class="hint">Click a file for details.</div>`;
+  const n = c.classCount||0;
+  $('#drawer').innerHTML = `<h4>${esc(c.label)}</h4>
+   <div class="toolbar-in" style="margin:8px 0"><div class="grp2"><button data-m="files" class="${UI.drillMode==='files'?'on':''}">Files</button><button data-m="classes" class="${UI.drillMode==='classes'?'on':''}" ${n?'':'disabled title="No classes/types detected here"'}>Classes${n?' ('+n+')':''}</button></div></div>
+   <div class="hint">${UI.drillMode==='classes'
+     ? 'Each circle is a class / interface / type. <b style="color:var(--acc)">Solid arrow + hollow head</b> = extends, <b style="color:var(--acc)">dashed</b> = implements, <span>thin grey</span> = uses (mentions the type in its body). Dashed circles belong to other components.'
+     : 'File-level view: circles are files (size ∝ bytes), arrows are imports. Dashed circles are other components these files touch.'}</div>
+   <div style="margin:10px 0"><button class="btn sm" id="backBtn">← Back to architecture</button></div><div class="hint">Click a ${UI.drillMode==='classes'?'class':'file'} for details.</div>`;
   $('#backBtn').onclick = () => { UI.drill=null; drawArch(); drawerComp(c); };
+  document.querySelectorAll('#drawer [data-m]').forEach(b=>b.onclick=()=>{ if(b.disabled) return; UI.drillMode=b.dataset.m; UI.drillMode==='classes'?drawClasses(c.id):drawDrill(c.id); drawerDrillHead(c); });
+}
+
+/* ---------------- classes ---------------- */
+const KIND_COLOR = {interface:'var(--api)',trait:'var(--api)',annotation:'var(--api)',enum:'var(--data)',struct:'var(--client)',record:'var(--client)',module:'var(--shared)',object:'var(--shared)'};
+let CDEG=null;
+function classDeg(){ if(CDEG&&CDEG.A===A) return CDEG.d; const d=new Map(); (A.classEdges||[]).forEach(([a,b])=>{ d.set(a,(d.get(a)||0)+1); d.set(b,(d.get(b)||0)+1); }); CDEG={A,d}; return d; }
+function topClasses(cid,n){ const d=classDeg(); return A.classes.filter(k=>k.comp===cid).sort((a,b)=>(d.get(b.id)||0)-(d.get(a.id)||0)||b.methods.length-a.methods.length).slice(0,n); }
+function fileClasses(fid){ return (A.classes||[]).filter(k=>k.file===fid); }
+const EDGE_VERB = ['uses','extends','implements'], EDGE_KIND = ['uses','extends','implements'];
+function drawClasses(cid, force){
+  const c=A.comps[cid]; const d=classDeg();
+  let mine = A.classes.filter(k=>k.comp===cid).sort((a,b)=>(d.get(b.id)||0)-(d.get(a.id)||0)||b.methods.length-a.methods.length);
+  let top = mine.slice(0,80); if (force!=null && A.classes[force].comp===cid && !top.some(k=>k.id===force)) top.push(A.classes[force]);
+  const keep = new Set(top.map(k=>k.id)); const ghosts = new Map(); const edges=[]; const seen=new Set();
+  const ce = (A.classEdges||[]).slice().sort((a,b)=>b[2]-a[2]);
+  for (const [a,b,t] of ce) {
+    const ina=keep.has(a), inb=keep.has(b);
+    if (ina&&inb) { edges.push({s:'k'+a,t:'k'+b,w:1,kind:EDGE_KIND[t],title:`${A.classes[a].name} ${EDGE_VERB[t]} ${A.classes[b].name}`}); }
+    else if (ina && A.classes[b].comp!==cid) { if(ghosts.size<30||ghosts.has(b)||b===force){ ghosts.set(b,1); edges.push({s:'k'+a,t:'k'+b,w:1,kind:EDGE_KIND[t],title:`${A.classes[a].name} ${EDGE_VERB[t]} ${A.classes[b].name}`}); } }
+    else if (inb && A.classes[a].comp!==cid) { if(ghosts.size<30||ghosts.has(a)||a===force){ ghosts.set(a,1); edges.push({s:'k'+a,t:'k'+b,w:1,kind:EDGE_KIND[t],title:`${A.classes[a].name} ${EDGE_VERB[t]} ${A.classes[b].name}`}); } }
+  }
+  const mk = (k,ghost)=>({id:'k'+k.id,kind:ghost?'ghost':'class',kid:k.id,label:k.name,sub:k.kind+(k.methods.length?' · '+k.methods.length+' methods':'')+(ghost?' · '+short(A.comps[k.comp].label,18):''),color:KIND_COLOR[k.kind]||COMP_COLOR(A.comps[k.comp]||c),r:8+Math.min(18,Math.sqrt(k.methods.length)*2.4+(d.get(k.id)||0)*0.35),title:`${k.name} (${k.kind})\n${A.files[k.file].path}:${k.line}`});
+  const nodes = top.map(k=>mk(k,false)).concat([...ghosts.keys()].filter(id=>!keep.has(id)).map(id=>mk(A.classes[id],true)));
+  const nodeIds = new Set(nodes.map(n=>n.id)); const edges2 = edges.filter(e=>nodeIds.has(e.s)&&nodeIds.has(e.t));
+  // keep extends/implements edges short so hierarchies cluster
+  forceLayout(nodes,edges2,1000,720); GRAPH.set(nodes,edges2,'force'); requestAnimationFrame(()=>GRAPH.fit());
+}
+function focusClass(id){
+  const k=A.classes[id]; if(!k) return;
+  const go = ()=>{ UI.drill=k.comp; UI.drillMode='classes'; drawClasses(k.comp,id); GRAPH.select('k'+id); GRAPH.focus('k'+id); drawerClass(k); };
+  if (UI.tab!=='arch') { showTab('arch'); setTimeout(go,60); } else go();
+}
+function drawerClass(k){
+  const f=A.files[k.file], comp=A.comps[k.comp];
+  const out=(D.cOut.get(k.id)||[]), inc=(D.cInc.get(k.id)||[]);
+  const nm = id=>A.classes[id];
+  const list = (arr,empty)=> arr.length? `<ul class="clean">${arr.slice(0,25).map(([id,t])=>`<li><a class="link" data-class="${id}">${esc(nm(id).name)}</a> <span class="pill">${esc(nm(id).kind)}</span><span class="w">${esc(short(A.comps[nm(id).comp]?A.comps[nm(id).comp].label:'',22))}</span></li>`).join('')}${arr.length>25?`<li class="hint">+${arr.length-25} more</li>`:''}</ul>` : `<div class="hint">${empty}</div>`;
+  const parents=out.filter(e=>e[1]===1), ifaces=out.filter(e=>e[1]===2), uses=out.filter(e=>e[1]===0);
+  const subs=inc.filter(e=>e[1]===1), impls=inc.filter(e=>e[1]===2), usedBy=inc.filter(e=>e[1]===0);
+  $('#drawer').innerHTML = `<h4>${esc(k.name)}</h4>
+   <div style="margin:6px 0 8px"><span class="pill"><i style="background:${KIND_COLOR[k.kind]||COMP_COLOR(comp)}"></i>${esc(k.kind)}</span> ${comp?`<a class="link" data-comp="${comp.id}" style="font-size:12.5px">${esc(comp.label)}</a>`:''}</div>
+   <div class="mono hint" style="word-break:break-all"><a href="${ghBlob(f.path)}#L${k.line}" target="_blank" rel="noopener">${esc(f.path)}:${k.line}</a></div>
+   ${comp?`<div style="margin:10px 0"><button class="btn sm" id="bcBack">← All classes in ${esc(short(comp.label,26))}</button></div>`:''}
+   ${parents.length||ifaces.length?`<h5>Inherits from</h5>${list(parents.concat(ifaces),'')}`:''}
+   ${subs.length||impls.length?`<h5>Subclasses / implementations (${subs.length+impls.length})</h5>${list(subs.concat(impls),'')}`:''}
+   <h5>Uses (${uses.length})</h5>${list(uses,'No other classes in the repo referenced.')}
+   <h5>Used by (${usedBy.length})</h5>${list(usedBy,'Nothing else in the scanned code references it.')}
+   ${k.methods.length?`<h5>Members (${k.methods.length}${k.methods.length>=60?'+':''})</h5><div>${k.methods.map(m=>`<span class="tag mono">${esc(m)}</span>`).join('')}</div>`:''}
+   <div class="hint" style="margin-top:14px">“Uses” is detected by name: the class body mentions another declared type. Ambiguous names (declared in several places) are skipped.</div>`;
+  wireDrawer();
+  if ($('#bcBack')) $('#bcBack').onclick=()=>{ UI.drillMode='classes'; drawClasses(comp.id); drawerDrillHead(comp); };
 }
 function drawerSvc(s){
   const i = A.services.indexOf(s);
@@ -299,12 +362,15 @@ function drawerFile(f){
    <div class="hint">${fmtB(f.size)}${f.loc?' · '+f.loc+' lines':''}${f.lang?' · '+f.lang:''}${f.comp>=0?' · in '+esc(A.comps[f.comp].label):''}</div>
    ${f.routes.length?`<h5>Routes</h5>${f.routes.slice(0,10).map(r=>`<div><span class="method m-${r.method}">${r.method}</span> <span class="mono">${esc(r.path)}</span></div>`).join('')}`:''}
    ${f.models.length?`<h5>Models</h5>${f.models.map(m=>`<span class="tag fw">${esc(m.name)}</span>`).join('')}`:''}
+   ${fileClasses(f.id).length?`<h5>Classes in this file</h5>${fileClasses(f.id).map(k=>`<div><a class="link" data-class="${k.id}">${esc(k.name)}</a> <span class="pill">${esc(k.kind)}</span></div>`).join('')}`:''}
    <h5>Imports (${imp.length})</h5><ul class="clean">${imp.slice(0,30).map(x=>`<li class="mono" style="font-size:11.5px">${esc(x.path)}</li>`).join('')||'<li class="hint">none resolved in repo</li>'}</ul>
    <h5>Imported by (${by.length})</h5><ul class="clean">${by.slice(0,30).map(x=>`<li class="mono" style="font-size:11.5px">${esc(x.path)}</li>`).join('')||'<li class="hint">no one (in scanned files)</li>'}</ul>
    ${f.externals.length?`<h5>External packages</h5>${f.externals.map(x=>`<span class="tag">${esc(x)}</span>`).join('')}`:''}`;
+  wireDrawer();
 }
 function wireDrawer(){
   document.querySelectorAll('#drawer [data-comp]').forEach(a=>a.onclick=()=>selectComp(+a.dataset.comp));
+  document.querySelectorAll('#drawer [data-class]').forEach(a=>a.onclick=()=>focusClass(+a.dataset.class));
   document.querySelectorAll('#drawer [data-svc]').forEach(a=>a.onclick=()=>{ const i=+a.dataset.svc; UI.sel='x'+i; GRAPH.select(UI.sel); GRAPH.focus&&GRAPH.focus(UI.sel); drawerSvc(A.services[i]); });
 }
 function drawerHome(){
@@ -359,7 +425,7 @@ function renderOverview(){
     <div class="stat"><b>${fmt(s.totalFiles)}</b><span>files in repo</span></div><div class="stat"><b>${fmt(s.sourceFiles)}</b><span>source files</span></div>
     <div class="stat"><b>${A.comps.length}</b><span>components</span></div><div class="stat"><b>${D.edges.length}</b><span>component links</span></div>
     <div class="stat"><b>${A.services.length}</b><span>external systems</span></div><div class="stat"><b>${A.routes.filter(x=>x.method!=='PAGE').length}</b><span>endpoints</span></div>
-    <div class="stat"><b>${A.models.length}</b><span>data models</span></div><div class="stat"><b>${A.entries.length}</b><span>entry points</span></div></div>
+    <div class="stat"><b>${A.models.length}</b><span>data models</span></div><div class="stat"><b>${A.entries.length}</b><span>entry points</span></div>${(A.classes||[]).length?`<div class="stat"><b>${fmt(A.classes.length)}</b><span>classes & types</span></div><div class="stat"><b>${(A.classEdges||[]).filter(e=>e[2]>0).length}</b><span>inheritance links</span></div>`:''}</div>
    <div class="two" style="margin-top:6px">
     <div><h3>Languages</h3><div class="box"><div class="bar" style="height:12px">${L.slice(0,10).map((l,i)=>`<i style="width:${l.bytes/tot*100}%;background:hsl(${(i*57+200)%360} 65% 60%)" title="${l.name}"></i>`).join('')}</div>
      <div class="legend">${L.slice(0,10).map((l,i)=>`<span><i style="background:hsl(${(i*57+200)%360} 65% 60%)"></i>${l.name} ${Math.round(l.bytes/tot*100)}% · ${l.files} files</span>`).join('')}</div></div>
@@ -376,16 +442,16 @@ function renderArch(){
   if (!A.comps.length) { $('#panel').innerHTML='<div class="wrap"><div class="callout">No source code components were found in this repo (it may be docs, config or assets only).</div></div>'; return; }
   $('#panel').innerHTML = `<div class="archwrap"><div class="canvas"><svg id="g1"></svg>
     <div class="toolbar"><div class="grp"><button data-l="layered" class="${UI.layout==='layered'?'on':''}">Layers</button><button data-l="force" class="${UI.layout==='force'?'on':''}">Network</button></div>
-     <label><input type="checkbox" id="extChk" ${UI.showExt?'checked':''}> External systems</label><button class="btn sm" id="fitBtn">Fit</button><input type="search" id="findIn" placeholder="Find component…" list="complist"><datalist id="complist">${A.comps.map(c=>`<option value="${esc(c.label)}">`).join('')}</datalist></div>
+     <label><input type="checkbox" id="extChk" ${UI.showExt?'checked':''}> External systems</label><button class="btn sm" id="fitBtn">Fit</button><input type="search" id="findIn" placeholder="Find component or class…" list="complist"><datalist id="complist">${A.comps.map(c=>`<option value="${esc(c.label)}">`).join('')}${(A.classes||[]).slice(0,4000).map(k=>`<option value="${esc(k.name)}">`).join('')}</datalist></div>
     <div class="keybox"><div class="row"><span><i class="ln" style="border-color:var(--out)"></i>depends on</span><span><i class="ln" style="border-color:var(--in)"></i>used by</span><span><i class="ln" style="border-color:var(--warn);border-top-style:dashed"></i>against layer flow</span><span>⚡ entry · ↻ cycle</span></div></div></div>
     <aside class="drawer" id="drawer"></aside></div>`;
   GRAPH = GraphView($('#g1'),{node:selectNode, edge:drawerEdge, background:()=>{ UI.sel=null; GRAPH.select(null); if(UI.drill==null) drawerHome(); }});
   document.querySelectorAll('.toolbar [data-l]').forEach(b=>b.onclick=()=>{ UI.layout=b.dataset.l; UI.drill=null; document.querySelectorAll('.toolbar [data-l]').forEach(x=>x.classList.toggle('on',x===b)); drawArch(); });
   $('#extChk').onchange=e=>{ UI.showExt=e.target.checked; drawArch(); };
   $('#fitBtn').onclick=()=>GRAPH.fit();
-  $('#findIn').onchange=e=>{ const c=A.comps.find(c=>c.label===e.target.value)||A.comps.find(c=>c.label.toLowerCase().includes(e.target.value.toLowerCase())); if(c) selectComp(c.id); };
-  drawArch(); if (UI.sel && UI.sel[0]==='c') drawerComp(A.comps[+UI.sel.slice(1)]); else drawerHome();
-  const qp=new URLSearchParams(location.search); if (qp.has('sel') && !renderArch.done) { renderArch.done=true; const c=A.comps.find(c=>c.label.includes(qp.get('sel'))); if(c){ selectComp(c.id); if(qp.has('drill')){ UI.drill=c.id; drawDrill(c.id); drawerDrillHead(c);} } }
+  $('#findIn').onchange=e=>{ const v=e.target.value, lv=v.toLowerCase(); const c=A.comps.find(c=>c.label===v); if(c) return selectComp(c.id); const k=(A.classes||[]).find(k=>k.name===v)||(A.classes||[]).find(k=>k.name.toLowerCase()===lv); if(k) return focusClass(k.id); const c2=A.comps.find(c=>c.label.toLowerCase().includes(lv)); if(c2) return selectComp(c2.id); const k2=(A.classes||[]).find(k=>k.name.toLowerCase().includes(lv)); if(k2) focusClass(k2.id); };
+  UI.drill=null; drawArch(); if (UI.sel && UI.sel[0]==='c') drawerComp(A.comps[+UI.sel.slice(1)]); else drawerHome();
+  const qp=new URLSearchParams(location.search); if (qp.has('sel') && !renderArch.done) { renderArch.done=true; const c=A.comps.find(c=>c.label.includes(qp.get('sel'))); if(c){ selectComp(c.id); if(qp.has('drill')){ UI.drill=c.id; UI.drillMode=qp.get('drill')==='classes'?'classes':'files'; UI.drillMode==='classes'?drawClasses(c.id):drawDrill(c.id); drawerDrillHead(c);} if(qp.has('class')){ const k=A.classes.find(k=>k.name===qp.get('class')); if(k) focusClass(k.id); } } }
 }
 
 /* flows */
@@ -501,12 +567,14 @@ function fileDetail(f){
   $('#fdetail').innerHTML = `<h3 style="margin-top:0">${esc(base(f.path))}</h3><div class="mono hint">${esc(f.path)}</div>
    <div style="margin:10px 0;display:flex;gap:8px;flex-wrap:wrap"><a class="btn sm" href="${ghBlob(f.path)}" target="_blank" rel="noopener">Open on GitHub ↗</a>${c?`<button class="btn sm" id="toComp">Show ${esc(short(c.label,30))} in map</button>`:''}</div>
    <div class="hint">${esc(f.kind)} · ${fmtB(f.size)}${f.loc?' · '+f.loc+' lines':''}${f.lang?' · '+f.lang:''}${f.scanned?'':' · not scanned for imports'}</div>
+   ${fileClasses(f.id).length?`<h3>Classes & types</h3>${fileClasses(f.id).map(k=>`<div><a class="link" data-class="${k.id}">${esc(k.name)}</a> <span class="pill">${esc(k.kind)}</span> <span class="hint">${k.methods.length?k.methods.slice(0,6).join(', ')+(k.methods.length>6?'…':''):''}</span></div>`).join('')}`:''}
    ${f.routes.length?`<h3>Routes</h3>${f.routes.map(r=>`<div><span class="method m-${r.method}">${r.method}</span> <span class="mono">${esc(r.path)}</span></div>`).join('')}`:''}
    ${f.models.length?`<h3>Models</h3>${f.models.map(m=>`<span class="tag fw">${esc(m.name)}</span>`).join('')}`:''}
    <div class="two"><div><h3>Imports <small>${imp.length}</small></h3><ul class="clean">${imp.map(x=>`<li class="mono link" data-p="${esc(x.path)}">${esc(x.path)}</li>`).join('')||'<li class="hint">none inside the repo</li>'}</ul></div>
    <div><h3>Imported by <small>${by.length}</small></h3><ul class="clean">${by.slice(0,60).map(x=>`<li class="mono link" data-p="${esc(x.path)}">${esc(x.path)}</li>`).join('')||'<li class="hint">no one in scanned files</li>'}</ul></div></div>
    ${f.externals.length?`<h3>External packages</h3>${f.externals.map(x=>`<span class="tag">${esc(x)}</span>`).join('')}`:''}`;
   if (c) $('#toComp').onclick=()=>{ showTab('arch'); setTimeout(()=>selectComp(c.id),50); };
+  document.querySelectorAll('#fdetail [data-class]').forEach(a=>a.onclick=()=>focusClass(+a.dataset.class));
   document.querySelectorAll('#fdetail [data-p]').forEach(a=>a.onclick=()=>{ const t=A.files.find(x=>x.path===a.dataset.p); if(t) fileDetail(t); });
 }
 
@@ -520,6 +588,13 @@ function mermaid(){
   if (A.services.length) { lines.push('  subgraph EXT["External systems"]'); A.services.forEach((s,i)=>lines.push(`    x${i}[("${q(s.label)}")]`)); lines.push('  end'); }
   D.edges.forEach(e=>lines.push(`  c${e.s} ${e.back?'-.->':'-->'}|${e.w}| c${e.t}`));
   A.services.forEach((s,i)=>s.links.forEach(l=>lines.push(`  c${l[0]} -.-> x${i}`)));
+  return lines.join('\n');
+}
+function classMermaid(){
+  const ce=(A.classEdges||[]).filter(e=>e[2]>0); if(!ce.length) return '';
+  const d=classDeg(); const pick=ce.slice().sort((a,b)=>(d.get(b[0])||0)+(d.get(b[1])||0)-(d.get(a[0])||0)-(d.get(a[1])||0)).slice(0,90);
+  const id=k=>k.name.replace(/\W/g,'_'); const lines=['classDiagram']; const seen=new Set();
+  pick.forEach(([a,b,t])=>{ const A_=A.classes[a],B_=A.classes[b]; const l=`  ${id(B_)} <|${t===2?'..':'--'} ${id(A_)}`; if(!seen.has(l)){seen.add(l);lines.push(l);} });
   return lines.join('\n');
 }
 function markdownReport(){
@@ -536,12 +611,14 @@ function markdownReport(){
 }
 function download(name, text, type='text/plain'){ const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([text],{type})); a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000); }
 function renderExport(){
-  const m=mermaid(), md=markdownReport();
+  const m=mermaid(), md=markdownReport(), cm=classMermaid();
   $('#panel').innerHTML = `<div class="wrap"><h3>Mermaid diagram <small>paste into GitHub README, Notion, mermaid.live…</small></h3><textarea class="out" id="mm" readonly>${esc(m)}</textarea>
    <div style="margin:8px 0 22px;display:flex;gap:8px"><button class="btn" id="cpm">Copy</button><button class="btn" id="dlm">Download .mmd</button></div>
+   ${cm?`<h3>Class diagram (inheritance &amp; interfaces) <small>top ${Math.min(90,(A.classEdges||[]).filter(e=>e[2]>0).length)} relations</small></h3><textarea class="out" id="cm" readonly>${esc(cm)}</textarea><div style="margin:8px 0 22px"><button class="btn" id="cpc">Copy</button></div>`:''}
    <h3>Markdown architecture report</h3><textarea class="out" id="md" readonly>${esc(md)}</textarea><div style="margin:8px 0 22px;display:flex;gap:8px"><button class="btn" id="cpr">Copy</button><button class="btn" id="dlr">Download .md</button></div>
    <h3>Raw analysis</h3><p class="hint">Everything the analyzer found, as JSON. Re-open it later with “Load JSON” — no GitHub requests needed.</p><button class="btn" id="dlj">Download JSON</button></div>`;
   const cp=(id,btn)=>{ $(id).select(); navigator.clipboard&&navigator.clipboard.writeText($(id).value); btn.textContent='Copied ✓'; setTimeout(()=>btn.textContent='Copy',1200); };
+  if ($('#cpc')) $('#cpc').onclick=e=>cp('#cm',e.target);
   $('#cpm').onclick=e=>cp('#mm',e.target); $('#cpr').onclick=e=>cp('#md',e.target);
   $('#dlm').onclick=()=>download(A.repo.name+'-architecture.mmd',m); $('#dlr').onclick=()=>download(A.repo.name+'-architecture.md',md);
   $('#dlj').onclick=()=>download(A.repo.name+'-atlas.json',JSON.stringify(A),'application/json');
@@ -575,7 +652,7 @@ async function run(){
   setTimeout(()=>setProgress(0),600);
 }
 function open_(res){
-  A=res; TREE=null; UI.sel=null; UI.drill=null; UI.tree={}; UI.treeFilter=''; UI.apiFilter=''; UI.envFilter='';
+  A=res; TREE=null; UI.sel=null; UI.drill=null; UI.drillMode='files'; A.classes=A.classes||[]; A.classEdges=A.classEdges||[]; UI.tree={}; UI.treeFilter=''; UI.apiFilter=''; UI.envFilter='';
   // rehydrate Map-ish fields after JSON
   A.services.forEach(s=>{ if(!Array.isArray(s.links)) s.links=Object.entries(s.links).map(([k,v])=>[+k,v]); });
   derive(); const r=A.repo;

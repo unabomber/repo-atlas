@@ -291,6 +291,76 @@ function extractFile(f, text){
   return r;
 }
 
+
+/* ---------------- class / type extraction ---------------- */
+const NOT_METHOD = new Set('if for while switch catch return function new else do try with when elif except lambda await yield typeof sizeof using lock foreach'.split(' '));
+function splitList(s, sep=','){
+  if (!s) return [];
+  let t = s; for (let i=0;i<3;i++) t = t.replace(/<[^<>]*>/g,'');
+  return t.split(sep).map(el=>{ if (/=/.test(el)) return ''; el = el.replace(/\([^)]*\)/g,'').trim(); const w = el.split(/\s+/).pop()||''; return w.split(/[.:\\]/).pop(); })
+    .filter(x=>/^[A-Za-z_][\w$]*$/.test(x) && !['object','Object','public','private','protected','virtual','where','struct','class','new','default','Any','any'].includes(x));
+}
+function extractClasses(f, text){
+  const L = f.lang, out = [];
+  const add = (m, kind, name, ext, impl) => out.push({name, kind:kind.toLowerCase().replace('structure','struct').replace('@interface','annotation'), ext, impl, pos:m.index});
+  if (['JavaScript','TypeScript','Vue','Svelte','Astro'].includes(L)) {
+    for (const m of text.matchAll(/\n[ \t]*(?:export\s+)?(?:default\s+)?(?:declare\s+)?(?:abstract\s+)?(?:const\s+)?(class|interface|enum)\s+([A-Za-z_$][\w$]*)(?:\s*<[^{]*?>)?(?:\s+extends\s+([^{]+?))?(?:\s+implements\s+([^{]+?))?\s*\{/g))
+      add(m, m[1], m[2], splitList(m[3]), splitList(m[4]));
+  } else if (L==='Python') {
+    for (const m of text.matchAll(/^class\s+(\w+)\s*(?:\(([^)]*)\))?\s*:/gm)) add(m,'class',m[1],splitList(m[2]).filter(b=>!['ABC','Protocol','Generic','NamedTuple','TypedDict','Enum'].includes(b)||false),[]);
+  } else if (L==='Java' || L==='Scala') {
+    for (const m of text.matchAll(/\n[ \t]*(?:@\w+(?:\([^)]*\))?\s*)*(?:(?:public|protected|private|static|final|abstract|sealed|non-sealed|strictfp|case)\s+)*(class|interface|enum|record|@interface|trait|object)\s+(\w+)(?:\s*\[[^\]]*\])?(?:\s*<[^{(]*?>)?(?:\s*\([^)]*\))?(?:\s+extends\s+([^{]+?))?(?:\s+(?:implements|with)\s+([^{]+?))?(?:\s+permits\s+[^{]+?)?\s*\{/g))
+      add(m, m[1], m[2], splitList(m[3]), splitList(m[4]));
+  } else if (L==='Kotlin') {
+    for (const m of text.matchAll(/\n[ \t]*(?:@\w+(?:\([^)]*\))?\s*)*(?:(?:public|private|internal|protected|open|abstract|sealed|data|enum|inner|annotation|value)\s+)*(class|interface|object)\s+(\w+)(?:\s*<[^>]*>)?(?:\s*(?:\w+\s+)?\((?:[^()]|\([^()]*\))*\))?\s*(?::\s*([^{\n]+))?/g))
+      add(m, m[1], m[2], splitList(m[3]), []);
+  } else if (L==='C#') {
+    for (const m of text.matchAll(/\n[ \t]*(?:\[[^\]]*\]\s*)*(?:(?:public|internal|private|protected|static|abstract|sealed|partial|unsafe|readonly|new)\s+)*(class|interface|struct|enum|record)\s+(\w+)(?:\s*<[^{:(]*?>)?(?:\s*\([^)]*\))?[ \t]*(?::\s*([^{\n]+?))?[ \t]*(?:where\s[^{\n]+)?[ \t]*(?:\{|\r?\n|;)/g))
+      add(m, m[1], m[2], splitList(m[3]), []);
+  } else if (L==='Visual Basic') {
+    for (const m of text.matchAll(/^[ \t]*(?:(?:Public|Private|Friend|Protected|Partial|MustInherit|NotInheritable|Shadows)[ \t]+)*(Class|Interface|Structure|Module|Enum)[ \t]+(\w+)[^\n]*\n((?:[ \t]*(?:Inherits|Implements)[ \t]+[^\n]+\n)*)/gim)) {
+      const inh = (m[3].match(/Inherits[ \t]+([^\n]+)/i)||[])[1], imp = (m[3].match(/Implements[ \t]+([^\n]+)/i)||[])[1];
+      add(m, m[1], m[2], splitList(inh), splitList(imp));
+    }
+  } else if (L==='Go') {
+    for (const m of text.matchAll(/^type\s+(\w+)\s+(struct|interface)\b/gm)) {
+      const end = text.indexOf('\n}', m.index); const body = end>0 ? text.slice(m.index, end) : '';
+      const emb = [...body.split('\n').slice(1).join('\n').matchAll(/^\s*\*?([A-Z]\w*)\s*(?:\/\/.*)?$/gm)].map(x=>x[1]);
+      add(m, m[2], m[1], emb, []);
+    }
+  } else if (L==='Rust') {
+    for (const m of text.matchAll(/^[ \t]*(?:pub(?:\([^)]*\))?\s+)?(struct|enum|trait|union)\s+(\w+)(?:\s*<[^{;]*?>)?(?:\s*:\s*([^{;\n]+?))?\s*(?:where|\{|;|\()/gm)) add(m, m[1], m[2], splitList(m[3],'+'), []);
+    for (const m of text.matchAll(/^[ \t]*impl(?:\s*<[^>]*>)?\s+([\w:]+)(?:\s*<[^>]*>)?\s+for\s+([\w:]+)/gm)) { const c = out.find(x=>x.name===m[2].split('::').pop()); if (c) c.impl.push(m[1].split('::').pop()); }
+  } else if (L==='Ruby') {
+    for (const m of text.matchAll(/^[ \t]*(class|module)\s+([\w:]+)(?:\s*<\s*([\w:]+))?/gm)) add(m, m[1], m[2].split('::').pop(), m[3]?[m[3].split('::').pop()]:[], []);
+  } else if (L==='PHP') {
+    for (const m of text.matchAll(/\n[ \t]*(?:abstract\s+|final\s+)*(class|interface|trait|enum)\s+(\w+)(?:\s+extends\s+([\w\\, ]+?))?(?:\s+implements\s+([\w\\, ]+?))?\s*\{/g)) add(m, m[1], m[2], splitList(m[3]), splitList(m[4]));
+  } else if (L==='C++' || L==='C') {
+    for (const m of text.matchAll(/^[ \t]*(?:template\s*<[^>]*>\s*)?(class|struct)\s+(\w+)\s*(?:final\s*)?(?::\s*([^{]+?))?\s*\{/gm)) add(m, m[1], m[2], splitList(m[3]), []);
+  }
+  if (!out.length) return out;
+  out.sort((a,b)=>a.pos-b.pos);
+  const goMeth = []; if (L==='Go') for (const m of text.matchAll(/^func\s+\(\s*\w*\s*\*?(\w+)\s*\)\s+(\w+)\s*\(/gm)) goMeth.push({type:m[1],name:m[2]});
+  out.forEach((c,i)=>{
+    const seg = text.slice(c.pos, i+1<out.length ? out[i+1].pos : text.length);
+    c.line = text.slice(0,c.pos).split('\n').length + (text[c.pos]==='\n'?1:0);
+    c.idents = new Set(seg.match(/\b[A-Z][A-Za-z0-9_]{2,}\b/g)||[]);
+    const meth = new Set(); let rx = null;
+    if (['JavaScript','TypeScript','Vue','Svelte','Astro'].includes(L)) rx = /^[ \t]+(?:(?:public|private|protected|static|async|override|readonly|abstract|get|set)\s+)*([A-Za-z_$][\w$]*)\s*(?:<[^>(]*>)?\s*\([^)]*\)\s*(?::\s*[^{;=]+)?\s*[{;]/gm;
+    else if (L==='Python') rx = /^[ \t]+(?:async\s+)?def\s+(\w+)/gm;
+    else if (L==='Java'||L==='C#') rx = /^[ \t]+(?:(?:public|private|protected|internal|static|final|abstract|virtual|override|async|synchronized|sealed|extern|unsafe|default)\s+)+[\w<>\[\],.?]+(?:\s+[\w<>\[\],.?]+)*?\s+(\w+)\s*\(/gm;
+    else if (L==='Kotlin') rx = /\bfun\s+(?:<[^>]*>\s*)?(?:[\w.]+\.)?(\w+)\s*\(/g;
+    else if (L==='Scala') rx = /\bdef\s+(\w+)/g;
+    else if (L==='Visual Basic') rx = /^[ \t]*(?!End\b)(?:\w+[ \t]+)*?(?:Sub|Function)[ \t]+(\w+)/gim;
+    else if (L==='Ruby') rx = /^\s*def\s+(?:self\.)?(\w+[?!]?)/gm;
+    else if (L==='PHP') rx = /function\s+(\w+)/g;
+    if (rx) for (const m of seg.matchAll(rx)) if (!NOT_METHOD.has(m[1]) && meth.size<60) meth.add(m[1]);
+    for (const g of goMeth) if (g.type===c.name && meth.size<60) meth.add(g.name);
+    c.methods = [...meth];
+  });
+  return out;
+}
+
 /* ---------------- component discovery ---------------- */
 const CONTAINERS = new Set(['apps','packages','services','cmd','internal','pkg','crates','libs','modules','plugins','src','lib','app','projects','microservices','components-lib','workspaces']);
 function buildComponents(srcFiles, manifestDirs){
@@ -479,7 +549,7 @@ async function analyzeRepo(input, opts = {}, onProgress = ()=>{}){
   await pool(toScan, 12, async f=>{
     const t = await getText(f.path); done++;
     if (done%10===0 || done===toScan.length) onProgress({phase:`Scanning source files (${done}/${toScan.length})…`, pct:16+Math.round(done/toScan.length*66)});
-    if (t==null) return; f.scanned = true; f.loc = t.split('\n').length; raw.set(f.id, extractFile(f,t));
+    if (t==null) return; f.scanned = true; f.loc = t.split('\n').length; const ex = extractFile(f,t); try { ex.classes = extractClasses(f,t); } catch(e){ ex.classes=[]; } raw.set(f.id, ex);
   });
 
   /* ---------- resolution ---------- */
@@ -619,6 +689,34 @@ async function analyzeRepo(input, opts = {}, onProgress = ()=>{}){
   }
   const seenE = new Set(); const entriesU = entries.filter(e=>{ if(seenE.has(e.path))return false; seenE.add(e.path); return true; });
 
+
+  /* ---------- class graph ---------- */
+  onProgress({phase:'Linking classes and types…', pct:90});
+  const classes = []; const byName = new Map(); const CLASS_CAP = 9000;
+  for (const [id, r] of raw) { if (!r.classes) continue; for (const c of r.classes) { if (classes.length>=CLASS_CAP) break; const k={id:classes.length,name:c.name,kind:c.kind,file:id,comp:files[id].comp,line:c.line,methods:c.methods||[],ext:c.ext,impl:c.impl,idents:c.idents}; classes.push(k); if(!byName.has(k.name)) byName.set(k.name,[]); byName.get(k.name).push(k); } }
+  const COMMON = new Set('Program Main Test Tests Config Settings Utils Util Helper Helpers Error Exception Result Response Request Model Base App Context Form Form1 Item Items Data Type Types String Object List Map Set Date Promise Array Number Boolean Function Record Partial Optional Callable Dict Any None True False Self Client Server Service Manager Handler Event Events Options Props State Node Element Component View Controller Logger Console JSON Math Error'.split(' '));
+  const fileDirOf = k => dirOf(files[k.file].path);
+  function pickTarget(name, from){
+    const fam = l => ['JavaScript','TypeScript','Vue','Svelte','Astro'].includes(l)?'js':['C','C++','Objective-C'].includes(l)?'c':['C#','Visual Basic','F#'].includes(l)?'net':['Java','Kotlin','Scala'].includes(l)?'jvm':l;
+    const ff = fam(files[from.file].lang);
+    const cands = (byName.get(name)||[]).filter(c=>c.id!==from.id && fam(files[c.file].lang)===ff); if (!cands.length) return null;
+    if (cands.length===1) return cands[0];
+    const fi = files[from.file]; let best=null, bs=-1, tie=false;
+    for (const c of cands) { let sc=0; if (c.file===from.file) sc=4; else if (fi.imports.has(c.file)) sc=3; else if (fileDirOf(c)===fileDirOf(from)) sc=2.5; else if (c.comp===from.comp && c.comp>=0) sc=2; if (sc>bs){bs=sc;best=c;tie=false;} else if (sc===bs) tie=true; }
+    return bs>=2 && !tie ? best : null;
+  }
+  const classEdges = []; const seenCE = new Set(); const ceKey = (a,b)=>a+'>'+b;
+  const IFACE = new Set(['interface','trait','annotation']);
+  for (const c of classes) {
+    for (const n of c.ext) { const t = pickTarget(n,c); if (!t) continue; const k=ceKey(c.id,t.id); if(seenCE.has(k)) continue; seenCE.add(k); classEdges.push([c.id,t.id, IFACE.has(t.kind)&&!IFACE.has(c.kind)?2:1]); }
+    for (const n of c.impl) { const t = pickTarget(n,c); if (!t) continue; const k=ceKey(c.id,t.id); if(seenCE.has(k)) continue; seenCE.add(k); classEdges.push([c.id,t.id,2]); }
+  }
+  let usesCount = 0;
+  for (const c of classes) { let n=0;
+    for (const id of c.idents) { if (id===c.name || COMMON.has(id)) continue; const arr = byName.get(id); if (!arr || arr.length>5) continue; const t = pickTarget(id,c); if (!t) continue; const k=ceKey(c.id,t.id); if (seenCE.has(k)) continue; seenCE.add(k); classEdges.push([c.id,t.id,0]); if (++n>=40||++usesCount>40000) break; } }
+  classes.forEach(c=>{ delete c.idents; });
+  for (const k of classes) if (k.comp>=0) comps[k.comp].classCount=(comps[k.comp].classCount||0)+1;
+
   /* ---------- config-derived ---------- */
   // env examples
   for (const f of envFiles) { const t=cfgText.get(f.path); if(!t) continue; for (const l of t.split('\n')) { const m=l.match(/^\s*(?:export\s+)?([A-Z][A-Z0-9_]+)\s*=\s*(.*)$/); if(m){ let e=envVars.get(m[1]); if(!e){e={name:m[1],files:new Set(),example:null,sources:new Set()};envVars.set(m[1],e);} e.example=m[2].replace(/^["']|["']$/g,''); e.sources.add(f.path); } } }
@@ -725,7 +823,7 @@ async function analyzeRepo(input, opts = {}, onProgress = ()=>{}){
     repo:{owner,name:repo,branch,url:meta.html_url,description:meta.description,stars:meta.stargazers_count,language:meta.language,license:meta.license&&meta.license.spdx_id,topics:meta.topics||[],pushed:meta.pushed_at,size:meta.size,forks:meta.forks_count,homepage:meta.homepage},
     stats:{...stats, sourceFiles:srcFiles.length, scanned:raw.size, scanTargets:toScan.length, budget, languages, testFiles:stats.byKind.test||0},
     files:files.map(f=>({id:f.id,path:f.path,size:f.size,ext:f.ext,kind:f.kind,lang:f.lang,comp:f.comp,scanned:f.scanned,loc:f.loc||0,imports:[...f.imports],importedBy:[...f.importedBy],externals:[...f.externals],routes:f.routes,models:f.models})),
-    comps, edges:edgeList, fileEdges, services:services.map(s=>({...s,links:[...s.links.entries()]})),
+    classes:classes.map(c=>({id:c.id,name:c.name,kind:c.kind,file:c.file,comp:c.comp,line:c.line,methods:c.methods,ext:c.ext,impl:c.impl})), classEdges, comps, edges:edgeList, fileEdges, services:services.map(s=>({...s,links:[...s.links.entries()]})),
     entries:entriesU, routes:uniqRoutes, models, env:envList,
     compose:{files:composeInfo, services:composeServices}, docker:dockerInfo, workflows, scripts, makeTargets, procfile, deployTargets,
     infraFiles:infraFiles.map(f=>f.path).slice(0,60),

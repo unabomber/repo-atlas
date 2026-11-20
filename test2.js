@@ -10,5 +10,6 @@ const {analyzeRepo}=new Function(src+'\nreturn {analyzeRepo};')();
   console.log('ENTRIES',A.entries.slice(0,6).map(e=>e.path+':'+e.kind).join(', '));
   console.log('ROUTES',A.routes.length,A.routes.slice(0,5).map(r=>r.method+' '+r.path).join(', '),'MODELS',A.models.length,A.models.slice(0,5).map(m=>m.name).join(','));
   console.log('COMPOSE',A.compose.services.map(s=>s.name+':'+(s.image||s.build)+'<-'+s.dependsOn).join('; '));
+  { const k=A.classes||[]; const t=[0,0,0]; (A.classEdges||[]).forEach(e=>t[e[2]]++); console.log('CLASSES',k.length,'uses/extends/implements',t.join('/')); (A.classEdges||[]).filter(e=>e[2]>0).slice(0,8).forEach(e=>console.log('  ',k[e[0]].name,['','extends','implements'][e[2]],k[e[1]].name)); const big=k.slice().sort((a,b)=>b.methods.length-a.methods.length)[0]; if(big) console.log('  most methods:',big.name,big.methods.slice(0,8).join(',')); }
   console.log('ENV',A.env.length,'DEPLOY',A.deployTargets.join(','));
 })().catch(e=>{console.error(e);process.exit(1)});
