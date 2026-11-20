@@ -281,7 +281,7 @@ function extractFile(f, text){
   const r = {imports:[], routes:[], models:[], env:[], entry:null, pkg:null, ns:null};
   const lang = f.lang, ext = f.ext;
   if (['JavaScript','TypeScript','Vue','Svelte','Astro'].includes(lang) || ext==='dart') {
-    const t = stripJsComments(text); const seen = new Set();
+    const t = stripJsComments(text); const seen = new Set(); r._t = t;
     const add = s => { if(!seen.has(s)){ seen.add(s); r.imports.push(s); } };
     for (const m of t.matchAll(/(?:^|[^\w$.])import\s+(?:type\s+)?(?:[\w*{}\s,$]+?\s+from\s+)?['"]([^'"\n]+)['"]/g)) add(m[1]);
     for (const m of t.matchAll(/\bexport\s+(?:type\s+)?(?:\*(?:\s+as\s+\w+)?|\{[^}]*\})\s+from\s+['"]([^'"\n]+)['"]/g)) add(m[1]);
@@ -289,9 +289,9 @@ function extractFile(f, text){
     for (const m of t.matchAll(/\bimport\s*\(\s*['"]([^'"\n]+)['"]\s*\)/g)) add(m[1]);
     for (const m of t.matchAll(/\bprocess\.env\.([A-Z][A-Z0-9_]{2,})/g)) r.env.push(m[1]);
     for (const m of t.matchAll(/\bimport\.meta\.env\.([A-Z][A-Z0-9_]{2,})/g)) r.env.push(m[1]);
-    for (const m of t.matchAll(/\b(?:app|router|server|api|route|fastify|r|routes|v1|v2)\.(get|post|put|patch|delete|all|head|options)\s*\(\s*(['"`])([^'"`\n]+)\2/g)) if (/^[\/*]/.test(m[3])) r.routes.push({method:m[1].toUpperCase(),path:m[3]});
-    { const cp=(t.match(/@Controller\(\s*['"`]([^'"`]*)['"`]/)||[])[1]||''; for (const m of t.matchAll(/@(Get|Post|Put|Patch|Delete)\(\s*['"`]?([^'"`)\n]*)['"`]?\s*\)/g)) r.routes.push({method:m[1].toUpperCase(),path:('/'+cp.replace(/^\/|\/$/g,'')+'/'+m[2].replace(/^\//,'')).replace(/\/+/g,'/').replace(/(.)\/$/,'$1'),nest:true}); }
-    for (const m of t.matchAll(/\b(?:app|router|server|api|\w*[rR]outer|\w*Routes)\s*\.\s*route\(\s*(['"`])(\/[^'"`]*)\1\s*\)/g)) { const seg = t.slice(m.index + m[0].length, m.index + m[0].length + 500).split(/;|\n\s*\n/)[0]; for (const c of seg.matchAll(/^\s*\.\s*(get|post|put|patch|delete|all)\s*\(|\)\s*\.\s*(get|post|put|patch|delete|all)\s*\(/g)) r.routes.push({method:(c[1]||c[2]).toUpperCase(),path:m[2]}); }
+    for (const m of t.matchAll(/\b(?:app|router|server|api|route|fastify|r|routes|v1|v2)\.(get|post|put|patch|delete|all|head|options)\s*\(\s*(['"`])([^'"`\n]+)\2/g)) if (/^[\/*]/.test(m[3])) r.routes.push({idx:m.index,method:m[1].toUpperCase(),path:m[3]});
+    { const cp=(t.match(/@Controller\(\s*['"`]([^'"`]*)['"`]/)||[])[1]||''; for (const m of t.matchAll(/@(Get|Post|Put|Patch|Delete)\(\s*['"`]?([^'"`)\n]*)['"`]?\s*\)/g)) r.routes.push({idx:m.index,method:m[1].toUpperCase(),path:('/'+cp.replace(/^\/|\/$/g,'')+'/'+m[2].replace(/^\//,'')).replace(/\/+/g,'/').replace(/(.)\/$/,'$1'),nest:true}); }
+    for (const m of t.matchAll(/\b(?:app|router|server|api|\w*[rR]outer|\w*Routes)\s*\.\s*route\(\s*(['"`])(\/[^'"`]*)\1\s*\)/g)) { const seg = t.slice(m.index + m[0].length, m.index + m[0].length + 500).split(/;|\n\s*\n|\.\s*route\(/)[0]; for (const c of seg.matchAll(/^\s*\.\s*(get|post|put|patch|delete|all)\s*\(|\)\s*\.\s*(get|post|put|patch|delete|all)\s*\(/g)) r.routes.push({idx:m.index+m[0].length+(c.index||0),method:(c[1]||c[2]).toUpperCase(),path:m[2]}); }
     r.mounts = []; for (const m of t.matchAll(/\b(?:app|router|server|api|\w*[rR]outer|\w*Routes)\.use\(\s*(['"`])(\/[^'"`]*)\1\s*,\s*(?:[\w$.()]+\s*,\s*)*?(?:require\(\s*['"]([^'"]+)['"]\s*\)|([\w$]+))\s*\)/g)) { let spec = m[3]; if (!spec && m[4]) { const im = t.match(new RegExp(String.raw`(?:import\s+(?:\*\s+as\s+)?` + m[4].replace(/\$/g,'\\$') + String.raw`\b[^'"]*from\s*|\b` + m[4].replace(/\$/g,'\\$') + String.raw`\s*=\s*require\(\s*)['"]([^'"]+)['"]`)); spec = im && im[1]; } if (spec) r.mounts.push({prefix: m[2], spec}); }
     for (const m of t.matchAll(/@Entity\([^)]*\)\s*(?:export\s+)?class\s+(\w+)/g)) r.models.push({name:m[1],kind:'TypeORM entity'});
     for (const m of t.matchAll(/mongoose\.model(?:<[^>]*>)?\(\s*['"](\w+)/g)) r.models.push({name:m[1],kind:'Mongoose model'});
@@ -303,9 +303,9 @@ function extractFile(f, text){
     for (const m of text.matchAll(/^[ \t]*from\s+(\.*)([\w.]*)\s+import\s+([^\n#]+)/gm)) r.imports.push({dots:m[1].length,mod:m[2],names:m[3].replace(/[()\\]/g,'').split(',').map(s=>s.trim().split(/\s+as\s+/)[0]).filter(Boolean)});
     for (const m of text.matchAll(/^[ \t]*import\s+([\w.]+(?:\s+as\s+\w+)?(?:\s*,\s*[\w.]+(?:\s+as\s+\w+)?)*)/gm)) for (const part of m[1].split(',')) r.imports.push({dots:0,mod:part.trim().split(/\s+as\s+/)[0],names:[]});
     for (const m of text.matchAll(/(?:os\.environ(?:\.get)?\s*[\[(]\s*|os\.getenv\s*\(\s*|environ\.get\(\s*)['"]([A-Z][A-Z0-9_]{2,})/g)) r.env.push(m[1]);
-    for (const m of text.matchAll(/@\w+(?:\.\w+)*\.(get|post|put|patch|delete|websocket)\s*\(\s*f?['"]([^'"]*)['"]/g)) r.routes.push({method:m[1].toUpperCase(),path:m[2]||'/'});
-    for (const m of text.matchAll(/@\w+(?:\.\w+)*\.route\s*\(\s*['"]([^'"]*)['"](?:[^)]*methods\s*=\s*\[([^\]]*)\])?/g)) r.routes.push({method:(m[2]||'GET').replace(/['"\s]/g,'').toUpperCase()||'GET',path:m[1]});
-    if (/(^|\/)urls\.py$/.test(f.path)) for (const m of text.matchAll(/\b(?:re_)?path\s*\(\s*r?['"]([^'"]*)['"]/g)) r.routes.push({method:'ANY',path:'/'+m[1]});
+    for (const m of text.matchAll(/@\w+(?:\.\w+)*\.(get|post|put|patch|delete|websocket)\s*\(\s*f?['"]([^'"]*)['"]/g)) r.routes.push({idx:m.index,method:m[1].toUpperCase(),path:m[2]||'/'});
+    for (const m of text.matchAll(/@\w+(?:\.\w+)*\.route\s*\(\s*['"]([^'"]*)['"](?:[^)]*methods\s*=\s*\[([^\]]*)\])?/g)) r.routes.push({idx:m.index,method:(m[2]||'GET').replace(/['"\s]/g,'').toUpperCase()||'GET',path:m[1]});
+    if (/(^|\/)urls\.py$/.test(f.path)) for (const m of text.matchAll(/\b(?:re_)?path\s*\(\s*r?['"]([^'"]*)['"]/g)) r.routes.push({idx:m.index,method:'ANY',path:'/'+m[1]});
     { const pms=[...text.matchAll(/\b(?:APIRouter|Blueprint)\s*\([^)]*?(?:prefix|url_prefix)\s*=\s*f?['"]([^'"]*)['"]/g)]; if (pms.length===1 && pms[0][1] && !/(^|\/)urls\.py$/.test(f.path)) for (const rt of r.routes) rt.path='/'+pms[0][1].replace(/^\/|\/$/g,'')+'/'+rt.path.replace(/^\//,''); }
     for (const m of text.matchAll(/^class\s+(\w+)\((?:[\w.]*\.)?(Model|Base|DeclarativeBase|SQLModel|Document|AbstractUser|BaseModel)\b/gm)) if (m[2]!=='BaseModel') r.models.push({name:m[1],kind:m[2]==='Model'?'Django model':m[2]==='Document'?'Document':'ORM model'});
     if (/if\s+__name__\s*==\s*['"]__main__['"]/.test(text)) r.entry='cli';
@@ -315,39 +315,39 @@ function extractFile(f, text){
     for (const m of text.matchAll(/^import\s*\(([\s\S]*?)\)/gm)) for (const s of m[1].matchAll(/"([^"]+)"/g)) r.imports.push(s[1]);
     for (const m of text.matchAll(/^import\s+(?:\w+\s+)?"([^"]+)"/gm)) r.imports.push(m[1]);
     for (const m of text.matchAll(/os\.Getenv\(\s*"([A-Z][A-Z0-9_]{2,})"/g)) r.env.push(m[1]);
-    for (const m of text.matchAll(/\.(GET|POST|PUT|PATCH|DELETE|Get|Post|Put|Patch|Delete|Handle|HandleFunc|Any)\s*\(\s*"([^"]+)"/g)) if (m[2][0]==='/') r.routes.push({method:m[1].toUpperCase().replace('HANDLEFUNC','ANY').replace('HANDLE','ANY'),path:m[2]});
+    for (const m of text.matchAll(/\.(GET|POST|PUT|PATCH|DELETE|Get|Post|Put|Patch|Delete|Handle|HandleFunc|Any)\s*\(\s*"([^"]+)"/g)) if (m[2][0]==='/') r.routes.push({idx:m.index,method:m[1].toUpperCase().replace('HANDLEFUNC','ANY').replace('HANDLE','ANY'),path:m[2]});
     if (/^func\s+main\s*\(\s*\)/m.test(text)) r.entry = /ListenAndServe|\.Run\(|\.Listen\(|grpc\.NewServer/.test(text)?'server':'cli';
     r.pkg = (text.match(/^package\s+(\w+)/m)||[])[1];
   } else if (lang==='Rust') {
     for (const m of text.matchAll(/^\s*(?:pub(?:\([^)]*\))?\s+)?use\s+([\w:]+)/gm)) r.imports.push({use:m[1]});
     for (const m of text.matchAll(/^\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+(\w+)\s*;/gm)) r.imports.push({mod:m[1]});
     for (const m of text.matchAll(/std::env::var\(\s*"([A-Z][A-Z0-9_]{2,})"/g)) r.env.push(m[1]);
-    for (const m of text.matchAll(/#\[(get|post|put|patch|delete)\(\s*"([^"]+)"/g)) r.routes.push({method:m[1].toUpperCase(),path:m[2]});
-    for (const m of text.matchAll(/\.route\(\s*"([^"]+)"/g)) r.routes.push({method:'ANY',path:m[1]});
+    for (const m of text.matchAll(/#\[(get|post|put|patch|delete)\(\s*"([^"]+)"/g)) r.routes.push({idx:m.index,method:m[1].toUpperCase(),path:m[2]});
+    for (const m of text.matchAll(/\.route\(\s*"([^"]+)"/g)) r.routes.push({idx:m.index,method:'ANY',path:m[1]});
     if (/^\s*(async\s+)?fn\s+main\s*\(/m.test(text)) r.entry = /(HttpServer|axum::serve|Router::new|rocket::build)/.test(text)?'server':'cli';
   } else if (['Java','Kotlin','Scala'].includes(lang)) {
     for (const m of text.matchAll(/^\s*import\s+(?:static\s+)?([\w.]+?)(?:\.\*|\._)?\s*;?\s*$/gm)) r.imports.push(m[1]+(/\.(\*|_)\s*;?\s*$/.test(m[0])?'.*':''));
     r.pkg = (text.match(/^\s*package\s+([\w.]+)/m)||[])[1];
     { const cm=text.match(/@RequestMapping\s*\(\s*(?:(?:value|path)\s*=\s*)?\{?\s*"([^"]*)"[^)]*\)\s*(?:@\w+(?:\([^)]*\))?\s*)*(?:public\s+|open\s+|abstract\s+)*(?:class|interface)\b/); const cp=cm?cm[1].replace(/^\/|\/$/g,''):'';
-      for (const m of text.matchAll(/@(Get|Post|Put|Patch|Delete|Request)Mapping\s*(?:\(\s*(?:(?:value|path)\s*=\s*)?\{?\s*"([^"]*)")?/g)) { if (cm && m.index===cm.index) continue; r.routes.push({method:m[1]==='Request'?'ANY':m[1].toUpperCase(),path:('/'+cp+'/'+(m[2]||'').replace(/^\//,'')).replace(/\/+/g,'/').replace(/(.)\/$/,'$1')}); } }
+      for (const m of text.matchAll(/@(Get|Post|Put|Patch|Delete|Request)Mapping\s*(?:\(\s*(?:(?:value|path)\s*=\s*)?\{?\s*"([^"]*)")?/g)) { if (cm && m.index===cm.index) continue; r.routes.push({idx:m.index,method:m[1]==='Request'?'ANY':m[1].toUpperCase(),path:('/'+cp+'/'+(m[2]||'').replace(/^\//,'')).replace(/\/+/g,'/').replace(/(.)\/$/,'$1')}); } }
     for (const m of text.matchAll(/@Entity\b[\s\S]{0,300}?class\s+(\w+)/g)) r.models.push({name:m[1],kind:'JPA entity'});
     for (const m of text.matchAll(/System\.getenv\(\s*"([A-Z][A-Z0-9_]{2,})"/g)) r.env.push(m[1]);
     if (/@SpringBootApplication/.test(text)) r.entry='server'; else if (/static\s+void\s+main\s*\(|fun\s+main\s*\(/.test(text)) r.entry='cli';
   } else if (lang==='Ruby') {
     for (const m of text.matchAll(/^\s*require_relative\s+['"]([^'"]+)['"]/gm)) r.imports.push({rel:m[1]});
     for (const m of text.matchAll(/^\s*require\s+['"]([^'"]+)['"]/gm)) r.imports.push({gem:m[1]});
-    if (/(^|\/)routes\.rb$/.test(f.path)) { for (const m of text.matchAll(/^\s*(get|post|put|patch|delete)\s+['"]([^'"]+)['"]/gm)) r.routes.push({method:m[1].toUpperCase(),path:'/'+m[2].replace(/^\//,'')}); for (const m of text.matchAll(/^\s*resources?\s+:(\w+)/gm)) r.routes.push({method:'REST',path:'/'+m[1]}); }
+    if (/(^|\/)routes\.rb$/.test(f.path)) { for (const m of text.matchAll(/^\s*(get|post|put|patch|delete)\s+['"]([^'"]+)['"]/gm)) r.routes.push({idx:m.index,method:m[1].toUpperCase(),path:'/'+m[2].replace(/^\//,'')}); for (const m of text.matchAll(/^\s*resources?\s+:(\w+)/gm)) r.routes.push({idx:m.index,method:'REST',path:'/'+m[1]}); }
     for (const m of text.matchAll(/^class\s+(\w+)\s*<\s*(?:ApplicationRecord|ActiveRecord::Base)/gm)) r.models.push({name:m[1],kind:'ActiveRecord model'});
     for (const m of text.matchAll(/ENV\[['"]([A-Z][A-Z0-9_]{2,})/g)) r.env.push(m[1]);
   } else if (lang==='PHP') {
     for (const m of text.matchAll(/^\s*use\s+([\w\\]+)(?:\s+as\s+\w+)?\s*;/gm)) r.imports.push(m[1]);
     r.pkg = (text.match(/^\s*namespace\s+([\w\\]+)/m)||[])[1];
-    for (const m of text.matchAll(/Route::(get|post|put|patch|delete|any)\(\s*['"]([^'"]+)/g)) r.routes.push({method:m[1].toUpperCase(),path:'/'+m[2].replace(/^\//,'')});
+    for (const m of text.matchAll(/Route::(get|post|put|patch|delete|any)\(\s*['"]([^'"]+)/g)) r.routes.push({idx:m.index,method:m[1].toUpperCase(),path:'/'+m[2].replace(/^\//,'')});
     for (const m of text.matchAll(/env\(\s*['"]([A-Z][A-Z0-9_]{2,})/g)) r.env.push(m[1]);
   } else if (lang==='C#') {
     for (const m of text.matchAll(/^\s*using\s+(?:static\s+)?([\w.]+)\s*;/gm)) r.imports.push(m[1]);
     r.ns = (text.match(/^\s*namespace\s+([\w.]+)/m)||[])[1];
-    for (const m of text.matchAll(/\[Http(Get|Post|Put|Patch|Delete)(?:\(\s*"([^"]*)")?/g)) r.routes.push({method:m[1].toUpperCase(),path:'/'+(m[2]||'').replace(/^\//,'')});
+    for (const m of text.matchAll(/\[Http(Get|Post|Put|Patch|Delete)(?:\(\s*"([^"]*)")?/g)) r.routes.push({idx:m.index,method:m[1].toUpperCase(),path:'/'+(m[2]||'').replace(/^\//,'')});
     if (/static\s+(async\s+)?(void|Task)\s+Main\s*\(|WebApplication\.CreateBuilder/.test(text)) r.entry='server';
   } else if (lang==='Visual Basic') {
     for (const m of text.matchAll(/^\s*Imports\s+(?:\w+\s*=\s*)?([\w.]+)/gim)) r.imports.push(m[1]);
@@ -362,6 +362,26 @@ function extractFile(f, text){
   } else if (lang==='Prisma') {
     for (const m of text.matchAll(/^model\s+(\w+)\s*\{/gm)) r.models.push({name:m[1],kind:'Prisma model'});
     const p = text.match(/provider\s*=\s*"(postgresql|mysql|sqlite|mongodb|sqlserver|cockroachdb)"/); if (p) r.dbProvider = p[1];
+  }
+  { const T = r._t||text; delete r._t;
+    const lineAt = i => { let n=1; for (let p=T.indexOf('\n'); p>=0 && p<i; p=T.indexOf('\n',p+1)) n++; return n; };
+    const isJs = JSFAM.includes(lang) || ext==='dart';
+    if (isJs && r.routes.length) {
+      const KW = new Set(['async','await','function','req','res','next','request','response','ctx','c','return','new','true','false','null','undefined','this']);
+      const sites = [];
+      for (const m of T.matchAll(/\.\s*(get|post|put|patch|delete|all)\s*\(/g)) {
+        const st = m.index + m[0].length; let d=1, p=st, q=null; for (; p<T.length && p<st+600 && d>0; p++) { const ch=T[p]; if (q) { if (ch==='\\') p++; else if (ch===q) q=null; } else if (ch==='"'||ch==="'"||ch==='`') q=ch; else if (ch==='('||ch==='['||ch==='{') d++; else if (ch===')'||ch===']'||ch==='}') d--; }
+        const args = T.slice(st, p-1);
+        let path = (args.match(/^\s*(['"`])(\/[^'"`]*)\1/)||[])[2];
+        if (path==null) { const back = T.slice(Math.max(0,m.index-400), m.index); const rm = [...back.matchAll(/\.route\(\s*(['"`])(\/[^'"`]*)\1\s*\)/g)].pop(); if (rm && !/;/.test(back.slice(rm.index+rm[0].length))) path = rm[2]; }
+        if (path==null) continue;
+        const parts = []; { let depth=0, cur='', qq=null; for (const ch of args) { if (qq) { cur+=ch; if (ch===qq) qq=null; continue; } if (ch==='"'||ch==="'"||ch==='`') { qq=ch; cur+=ch; continue; } if ('([{'.includes(ch)) depth++; else if (')]}'.includes(ch)) depth--; if (ch===',' && depth===0) { parts.push(cur); cur=''; } else cur+=ch; } if (cur.trim()) parts.push(cur); }
+        let h=null; for (let i=parts.length-1;i>=0;i--) { const a=parts[i].trim(); if (/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$/.test(a) && !KW.has(a)) { h=a; } break; }
+        sites.push({method:m[1].toUpperCase(), path, h, idx:m.index});
+      }
+      for (const rt of r.routes) { const s = sites.find(x=>!x.used && (x.method===rt.method||rt.method==='ALL'||x.method==='ALL') && x.path===rt.path); if (s) { s.used=true; rt.idx=s.idx; if (s.h) rt.h=s.h; } }
+    }
+    for (const rt of r.routes) { if (rt.idx!=null) { rt.line=lineAt(rt.idx); delete rt.idx; } }
   }
   return r;
 }
@@ -426,6 +446,7 @@ function extractFunctions(f, text){
     for (const m of text.matchAll(/^(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)\s*(?:<[^>(]*>)?\s*\(/gm)) { const e=brace(m.index); push(m[1], m.index, e>0?e:nextCol0(m.index)); }
     for (const m of text.matchAll(/^(?:exports|module\.exports|[A-Za-z_$][\w$]*(?:\.prototype)?)\.([A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?function\b[^(]*\(/gm)) { const e=brace(m.index); push(m[1], m.index, e>0?e:nextCol0(m.index)); }
     for (const m of text.matchAll(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=\n]+)?=\s*(?:async\s*)?(?:function\b|\([^)]*\)\s*(?::\s*[^=\n]+?)?\s*=>|[A-Za-z_$][\w$]*\s*=>)/gm)) { const e=brace(m.index+m[0].length-2); push(m[1], m.index, e>0&&e-m.index<60000?e:nextCol0(m.index)); }
+    for (const m of text.matchAll(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*[\w$.]+\(\s*(?:async\s*)?(?:function\b[^(]*\([^)]*\)|\([^)]*\)\s*=>|[A-Za-z_$][\w$]*\s*=>)/gm)) { const e=brace(m.index+m[0].length-2); push(m[1], m.index, e>0&&e-m.index<60000?e:nextCol0(m.index)); }
   } else if (L==='Python') {
     for (const m of text.matchAll(/^(?:async\s+)?def\s+(\w+)/gm)) push(m[1], m.index, nextCol0(m.index));
   } else if (L==='Go') {
@@ -899,7 +920,7 @@ async function analyzeRepo(input, opts = {}, onProgress = ()=>{}){
   const fileMod = new Map(); const pendingRecv = [];
   for (const [id, r] of raw) { const fx=r.funcs; if (!fx||!fx.funcs.length) continue; const f=files[id];
     const tops = fx.funcs.filter(x=>!x.recv);
-    if (tops.length && classes.length<CLASS_CAP+2000) { const isGo=f.lang==='Go'; const k={id:classes.length,name:base(f.path),kind:'module',fn:true,pk:(isGo?base(dirOf(f.path)):base(f.path).replace(/\.[^.]+$/,'')).toLowerCase(),file:id,comp:f.comp,line:tops[0].line,methods:tops.map(x=>x.name),mcalls:tops.map(x=>x.calls),mlines:tops.map(x=>x.line),types:fx.types||{},ext:[],impl:[],idents:new Set(tops.flatMap(x=>x.idents))}; classes.push(k); fileMod.set(id,k); }
+    if (tops.length && classes.length<CLASS_CAP+2000) { const isGo=f.lang==='Go'; const k={id:classes.length,name:base(f.path),kind:'module',fn:true,pk:(isGo?base(dirOf(f.path)):base(f.path).replace(/\.[^.]+$/,'')).toLowerCase(),file:id,comp:f.comp,line:tops[0].line,methods:tops.map(x=>x.name),mcalls:tops.map(x=>x.calls),mlines:tops.map(x=>x.line),types:fx.types||{},ext:[],impl:[],idents:new Set(tops.flatMap(x=>x.idents)),fidents:tops.map(x=>x.idents)}; classes.push(k); fileMod.set(id,k); }
     for (const x of fx.funcs) if (x.recv) pendingRecv.push({id,x,types:fx.types});
   }
   for (const {id,x,types} of pendingRecv) { const dir=dirOf(files[id].path); const c=(byName.get(x.recv.type)||[]).find(c=>!c.fn && files[c.file].lang===files[id].lang && (c.file===id||dirOf(files[c.file].path)===dir)); if (!c||c.methods.includes(x.name)||c.methods.length>=80) continue; c.methods.push(x.name); c.mcalls.push(x.calls); c.mlines.push(x.line); x.idents.forEach(i=>c.idents.add(i)); Object.assign(c.types, types||{}); }
@@ -967,6 +988,11 @@ async function analyzeRepo(input, opts = {}, onProgress = ()=>{}){
   }
   const callCountByComp = new Map(); for (const c of calls) { const cc=classes[c[0]].comp; if (cc>=0) callCountByComp.set(cc,(callCountByComp.get(cc)||0)+1); }
   for (const [cid,n] of callCountByComp) comps[cid].callCount = n;
+  { const modelByName = new Map(); models.forEach((m,i)=>{ if (m.name.length>=3 && !modelByName.has(m.name)) modelByName.set(m.name,i); });
+    const touch = ids => { const o=[]; if (ids) for (const x of ids) { const mi=modelByName.get(x); if (mi!=null && !o.includes(mi) && o.length<12) o.push(mi); } return o; };
+    for (const k of classes) { if (!k.idents || files[k.file].models.length) { delete k.fidents; continue; } let per;
+      if (k.fn && k.fidents) per = k.fidents.map(touch); else { const t = touch(k.idents).filter(mi=>models[mi].name!==k.name); per = k.methods.map(()=>t); }
+      if (per.some(x=>x.length)) k.mm = per; delete k.fidents; } }
   classes.forEach(c=>{ delete c.idents; });
   for (const k of classes) if (k.comp>=0 && !k.fn) comps[k.comp].classCount=(comps[k.comp].classCount||0)+1;
 
@@ -1072,6 +1098,18 @@ async function analyzeRepo(input, opts = {}, onProgress = ()=>{}){
   routes.sort((a,b)=>a.path.localeCompare(b.path));
   const uniqRoutes=[]; { const seen=new Set(); for (const r of routes) { const k=r.method+' '+r.path+' '+r.file; if(!seen.has(k)){seen.add(k);uniqRoutes.push(r);} } }
 
+  /* ---------- which function handles each route ---------- */
+  { const unitsByFile = new Map(); for (const k of classes) { if(!unitsByFile.has(k.file)) unitsByFile.set(k.file,[]); unitsByFile.get(k.file).push(k); }
+    const fidOf = new Map(files.map(f=>[f.path,f.id]));
+    const findIn = (fids, name, cls) => { for (const fid of fids) for (const k of (unitsByFile.get(fid)||[])) { if (cls && k.name!==cls) continue; const i=k.methods.indexOf(name); if (i>=0) return [k.id,i]; } return null; };
+    for (const rt of uniqRoutes) { const fid=fidOf.get(rt.file); if (fid==null||rt.method==='PAGE') continue; let hu=null;
+      if (rt.h) { const parts=rt.h.split('.'); const nm=parts[parts.length-1], q=parts.length>1?parts[parts.length-2]:null;
+        const imp=[fid,...files[fid].imports]; hu = findIn(imp,nm,null);
+        if (!hu) { const c=[]; for (const k of classes) { const i=k.methods.indexOf(nm); if (i>=0) c.push([k.id,i]); } const cm=c.filter(x=>classes[x[0]].comp===files[fid].comp); if (cm.length===1) hu=cm[0]; }
+        if (hu && q) { const alt=findIn(imp,nm,q); if (alt) hu=alt; } }
+      if (!hu && rt.line) { let best=null, bl=1e9; for (const k of (unitsByFile.get(fid)||[])) for (let i=0;i<k.methods.length;i++) { const ml=k.mlines&&k.mlines[i]; if (ml!=null && ml>=rt.line && ml-rt.line<=14 && (ml<bl || (best && ml===bl && k.line<classes[best[0]].line)) && (k.fn||k.line<=rt.line)) { bl=ml; best=[k.id,i]; } } hu=best; }
+      if (hu) { rt.hc=hu[0]; rt.hm=hu[1]; } delete rt.h; } }
+
   /* ---------- match client HTTP calls to backend routes ---------- */
   const apiCalls = []; const apiEdgeMap = new Map(); const clsByFile = new Map(); for (const k of classes) { let l=clsByFile.get(k.file); if(!l){l=[];clsByFile.set(k.file,l);} l.push(k); }
   {
@@ -1113,7 +1151,7 @@ async function analyzeRepo(input, opts = {}, onProgress = ()=>{}){
     repo:{owner,name:repo,branch,local:!!LOCAL,remote:LOCAL?(LOCAL.remote||null):null,url:meta.html_url,description:meta.description,stars:meta.stargazers_count,language:meta.language,license:meta.license&&meta.license.spdx_id,topics:meta.topics||[],pushed:meta.pushed_at,size:meta.size,forks:meta.forks_count,homepage:meta.homepage},
     stats:{...stats, sourceFiles:srcFiles.length, scanned:raw.size, scanTargets:toScan.length, budget, languages, testFiles:stats.byKind.test||0},
     files:files.map(f=>({id:f.id,path:f.path,size:f.size,ext:f.ext,kind:f.kind,lang:f.lang,comp:f.comp,scanned:f.scanned,loc:f.loc||0,imports:[...f.imports],importedBy:[...f.importedBy],externals:[...f.externals],routes:f.routes,models:f.models})),
-    classes:classes.map(c=>({id:c.id,name:c.name,kind:c.kind,fn:c.fn?1:0,file:c.file,comp:c.comp,line:c.line,methods:c.methods,mlines:c.mlines,ext:c.ext,impl:c.impl})), classEdges, calls, apiCalls:apiCalls.slice(0,4000), apiEdges, comps, edges:edgeList, fileEdges, services:services.map(s=>({...s,links:[...s.links.entries()]})),
+    classes:classes.map(c=>({mm:c.mm,id:c.id,name:c.name,kind:c.kind,fn:c.fn?1:0,file:c.file,comp:c.comp,line:c.line,methods:c.methods,mlines:c.mlines,ext:c.ext,impl:c.impl})), classEdges, calls, apiCalls:apiCalls.slice(0,4000), apiEdges, comps, edges:edgeList, fileEdges, services:services.map(s=>({...s,links:[...s.links.entries()]})),
     entries:entriesU, routes:uniqRoutes, models, env:envList,
     compose:{files:composeInfo, services:composeServices}, docker:dockerInfo, workflows, scripts, makeTargets, procfile, deployTargets,
     infraFiles:infraFiles.map(f=>f.path).slice(0,60),

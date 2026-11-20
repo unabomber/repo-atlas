@@ -93,6 +93,7 @@ ul.clean{list-style:none;margin:0;padding:0}ul.clean li{padding:5px 0;border-bot
 .node{cursor:pointer}.node .bx{fill:var(--card);stroke-width:1.5;transition:filter .15s}
 .node:hover .bx{filter:brightness(1.25)}
 .node text{fill:var(--text);pointer-events:none}.node .t1{font-size:12.5px;font-weight:600}.node .t2{font-size:10.5px;fill:var(--mute)}
+.tr-grid{display:grid;grid-template-columns:minmax(220px,300px) minmax(0,1fr);gap:14px;align-items:start}.trlist{max-height:640px;overflow:auto;padding:8px}.trgrp{padding:6px 8px;border-radius:6px;cursor:pointer;margin-top:4px}.trgrp:hover,.trrow:hover{background:var(--hover,rgba(127,127,127,.12))}.trgrp.on,.trrow.on{background:rgba(127,127,127,.2)}.trrow{padding:4px 8px 4px 18px;border-radius:6px;cursor:pointer;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.edge.k-data .line{stroke:var(--warn);stroke-dasharray:4 3;opacity:.8}@media(max-width:820px){.tr-grid{grid-template-columns:1fr}.trlist{max-height:260px}}
 .node.dim{opacity:.18}.node.tdn,.node.tup{opacity:.7}
 .node.sel .bx{stroke-width:3;filter:drop-shadow(0 0 8px var(--acc))}
 .edge .line{fill:none;stroke:var(--edge);opacity:.5}.edge .hit{fill:none;stroke:transparent;stroke-width:12;cursor:pointer}
@@ -426,7 +427,7 @@ function extractFile(f, text){
   const r = {imports:[], routes:[], models:[], env:[], entry:null, pkg:null, ns:null};
   const lang = f.lang, ext = f.ext;
   if (['JavaScript','TypeScript','Vue','Svelte','Astro'].includes(lang) || ext==='dart') {
-    const t = stripJsComments(text); const seen = new Set();
+    const t = stripJsComments(text); const seen = new Set(); r._t = t;
     const add = s => { if(!seen.has(s)){ seen.add(s); r.imports.push(s); } };
     for (const m of t.matchAll(/(?:^|[^\w$.])import\s+(?:type\s+)?(?:[\w*{}\s,$]+?\s+from\s+)?['"]([^'"\n]+)['"]/g)) add(m[1]);
     for (const m of t.matchAll(/\bexport\s+(?:type\s+)?(?:\*(?:\s+as\s+\w+)?|\{[^}]*\})\s+from\s+['"]([^'"\n]+)['"]/g)) add(m[1]);
@@ -434,9 +435,9 @@ function extractFile(f, text){
     for (const m of t.matchAll(/\bimport\s*\(\s*['"]([^'"\n]+)['"]\s*\)/g)) add(m[1]);
     for (const m of t.matchAll(/\bprocess\.env\.([A-Z][A-Z0-9_]{2,})/g)) r.env.push(m[1]);
     for (const m of t.matchAll(/\bimport\.meta\.env\.([A-Z][A-Z0-9_]{2,})/g)) r.env.push(m[1]);
-    for (const m of t.matchAll(/\b(?:app|router|server|api|route|fastify|r|routes|v1|v2)\.(get|post|put|patch|delete|all|head|options)\s*\(\s*(['"`])([^'"`\n]+)\2/g)) if (/^[\/*]/.test(m[3])) r.routes.push({method:m[1].toUpperCase(),path:m[3]});
-    { const cp=(t.match(/@Controller\(\s*['"`]([^'"`]*)['"`]/)||[])[1]||''; for (const m of t.matchAll(/@(Get|Post|Put|Patch|Delete)\(\s*['"`]?([^'"`)\n]*)['"`]?\s*\)/g)) r.routes.push({method:m[1].toUpperCase(),path:('/'+cp.replace(/^\/|\/$/g,'')+'/'+m[2].replace(/^\//,'')).replace(/\/+/g,'/').replace(/(.)\/$/,'$1'),nest:true}); }
-    for (const m of t.matchAll(/\b(?:app|router|server|api|\w*[rR]outer|\w*Routes)\s*\.\s*route\(\s*(['"`])(\/[^'"`]*)\1\s*\)/g)) { const seg = t.slice(m.index + m[0].length, m.index + m[0].length + 500).split(/;|\n\s*\n/)[0]; for (const c of seg.matchAll(/^\s*\.\s*(get|post|put|patch|delete|all)\s*\(|\)\s*\.\s*(get|post|put|patch|delete|all)\s*\(/g)) r.routes.push({method:(c[1]||c[2]).toUpperCase(),path:m[2]}); }
+    for (const m of t.matchAll(/\b(?:app|router|server|api|route|fastify|r|routes|v1|v2)\.(get|post|put|patch|delete|all|head|options)\s*\(\s*(['"`])([^'"`\n]+)\2/g)) if (/^[\/*]/.test(m[3])) r.routes.push({idx:m.index,method:m[1].toUpperCase(),path:m[3]});
+    { const cp=(t.match(/@Controller\(\s*['"`]([^'"`]*)['"`]/)||[])[1]||''; for (const m of t.matchAll(/@(Get|Post|Put|Patch|Delete)\(\s*['"`]?([^'"`)\n]*)['"`]?\s*\)/g)) r.routes.push({idx:m.index,method:m[1].toUpperCase(),path:('/'+cp.replace(/^\/|\/$/g,'')+'/'+m[2].replace(/^\//,'')).replace(/\/+/g,'/').replace(/(.)\/$/,'$1'),nest:true}); }
+    for (const m of t.matchAll(/\b(?:app|router|server|api|\w*[rR]outer|\w*Routes)\s*\.\s*route\(\s*(['"`])(\/[^'"`]*)\1\s*\)/g)) { const seg = t.slice(m.index + m[0].length, m.index + m[0].length + 500).split(/;|\n\s*\n|\.\s*route\(/)[0]; for (const c of seg.matchAll(/^\s*\.\s*(get|post|put|patch|delete|all)\s*\(|\)\s*\.\s*(get|post|put|patch|delete|all)\s*\(/g)) r.routes.push({idx:m.index+m[0].length+(c.index||0),method:(c[1]||c[2]).toUpperCase(),path:m[2]}); }
     r.mounts = []; for (const m of t.matchAll(/\b(?:app|router|server|api|\w*[rR]outer|\w*Routes)\.use\(\s*(['"`])(\/[^'"`]*)\1\s*,\s*(?:[\w$.()]+\s*,\s*)*?(?:require\(\s*['"]([^'"]+)['"]\s*\)|([\w$]+))\s*\)/g)) { let spec = m[3]; if (!spec && m[4]) { const im = t.match(new RegExp(String.raw`(?:import\s+(?:\*\s+as\s+)?` + m[4].replace(/\$/g,'\\$') + String.raw`\b[^'"]*from\s*|\b` + m[4].replace(/\$/g,'\\$') + String.raw`\s*=\s*require\(\s*)['"]([^'"]+)['"]`)); spec = im && im[1]; } if (spec) r.mounts.push({prefix: m[2], spec}); }
     for (const m of t.matchAll(/@Entity\([^)]*\)\s*(?:export\s+)?class\s+(\w+)/g)) r.models.push({name:m[1],kind:'TypeORM entity'});
     for (const m of t.matchAll(/mongoose\.model(?:<[^>]*>)?\(\s*['"](\w+)/g)) r.models.push({name:m[1],kind:'Mongoose model'});
@@ -448,9 +449,9 @@ function extractFile(f, text){
     for (const m of text.matchAll(/^[ \t]*from\s+(\.*)([\w.]*)\s+import\s+([^\n#]+)/gm)) r.imports.push({dots:m[1].length,mod:m[2],names:m[3].replace(/[()\\]/g,'').split(',').map(s=>s.trim().split(/\s+as\s+/)[0]).filter(Boolean)});
     for (const m of text.matchAll(/^[ \t]*import\s+([\w.]+(?:\s+as\s+\w+)?(?:\s*,\s*[\w.]+(?:\s+as\s+\w+)?)*)/gm)) for (const part of m[1].split(',')) r.imports.push({dots:0,mod:part.trim().split(/\s+as\s+/)[0],names:[]});
     for (const m of text.matchAll(/(?:os\.environ(?:\.get)?\s*[\[(]\s*|os\.getenv\s*\(\s*|environ\.get\(\s*)['"]([A-Z][A-Z0-9_]{2,})/g)) r.env.push(m[1]);
-    for (const m of text.matchAll(/@\w+(?:\.\w+)*\.(get|post|put|patch|delete|websocket)\s*\(\s*f?['"]([^'"]*)['"]/g)) r.routes.push({method:m[1].toUpperCase(),path:m[2]||'/'});
-    for (const m of text.matchAll(/@\w+(?:\.\w+)*\.route\s*\(\s*['"]([^'"]*)['"](?:[^)]*methods\s*=\s*\[([^\]]*)\])?/g)) r.routes.push({method:(m[2]||'GET').replace(/['"\s]/g,'').toUpperCase()||'GET',path:m[1]});
-    if (/(^|\/)urls\.py$/.test(f.path)) for (const m of text.matchAll(/\b(?:re_)?path\s*\(\s*r?['"]([^'"]*)['"]/g)) r.routes.push({method:'ANY',path:'/'+m[1]});
+    for (const m of text.matchAll(/@\w+(?:\.\w+)*\.(get|post|put|patch|delete|websocket)\s*\(\s*f?['"]([^'"]*)['"]/g)) r.routes.push({idx:m.index,method:m[1].toUpperCase(),path:m[2]||'/'});
+    for (const m of text.matchAll(/@\w+(?:\.\w+)*\.route\s*\(\s*['"]([^'"]*)['"](?:[^)]*methods\s*=\s*\[([^\]]*)\])?/g)) r.routes.push({idx:m.index,method:(m[2]||'GET').replace(/['"\s]/g,'').toUpperCase()||'GET',path:m[1]});
+    if (/(^|\/)urls\.py$/.test(f.path)) for (const m of text.matchAll(/\b(?:re_)?path\s*\(\s*r?['"]([^'"]*)['"]/g)) r.routes.push({idx:m.index,method:'ANY',path:'/'+m[1]});
     { const pms=[...text.matchAll(/\b(?:APIRouter|Blueprint)\s*\([^)]*?(?:prefix|url_prefix)\s*=\s*f?['"]([^'"]*)['"]/g)]; if (pms.length===1 && pms[0][1] && !/(^|\/)urls\.py$/.test(f.path)) for (const rt of r.routes) rt.path='/'+pms[0][1].replace(/^\/|\/$/g,'')+'/'+rt.path.replace(/^\//,''); }
     for (const m of text.matchAll(/^class\s+(\w+)\((?:[\w.]*\.)?(Model|Base|DeclarativeBase|SQLModel|Document|AbstractUser|BaseModel)\b/gm)) if (m[2]!=='BaseModel') r.models.push({name:m[1],kind:m[2]==='Model'?'Django model':m[2]==='Document'?'Document':'ORM model'});
     if (/if\s+__name__\s*==\s*['"]__main__['"]/.test(text)) r.entry='cli';
@@ -460,39 +461,39 @@ function extractFile(f, text){
     for (const m of text.matchAll(/^import\s*\(([\s\S]*?)\)/gm)) for (const s of m[1].matchAll(/"([^"]+)"/g)) r.imports.push(s[1]);
     for (const m of text.matchAll(/^import\s+(?:\w+\s+)?"([^"]+)"/gm)) r.imports.push(m[1]);
     for (const m of text.matchAll(/os\.Getenv\(\s*"([A-Z][A-Z0-9_]{2,})"/g)) r.env.push(m[1]);
-    for (const m of text.matchAll(/\.(GET|POST|PUT|PATCH|DELETE|Get|Post|Put|Patch|Delete|Handle|HandleFunc|Any)\s*\(\s*"([^"]+)"/g)) if (m[2][0]==='/') r.routes.push({method:m[1].toUpperCase().replace('HANDLEFUNC','ANY').replace('HANDLE','ANY'),path:m[2]});
+    for (const m of text.matchAll(/\.(GET|POST|PUT|PATCH|DELETE|Get|Post|Put|Patch|Delete|Handle|HandleFunc|Any)\s*\(\s*"([^"]+)"/g)) if (m[2][0]==='/') r.routes.push({idx:m.index,method:m[1].toUpperCase().replace('HANDLEFUNC','ANY').replace('HANDLE','ANY'),path:m[2]});
     if (/^func\s+main\s*\(\s*\)/m.test(text)) r.entry = /ListenAndServe|\.Run\(|\.Listen\(|grpc\.NewServer/.test(text)?'server':'cli';
     r.pkg = (text.match(/^package\s+(\w+)/m)||[])[1];
   } else if (lang==='Rust') {
     for (const m of text.matchAll(/^\s*(?:pub(?:\([^)]*\))?\s+)?use\s+([\w:]+)/gm)) r.imports.push({use:m[1]});
     for (const m of text.matchAll(/^\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+(\w+)\s*;/gm)) r.imports.push({mod:m[1]});
     for (const m of text.matchAll(/std::env::var\(\s*"([A-Z][A-Z0-9_]{2,})"/g)) r.env.push(m[1]);
-    for (const m of text.matchAll(/#\[(get|post|put|patch|delete)\(\s*"([^"]+)"/g)) r.routes.push({method:m[1].toUpperCase(),path:m[2]});
-    for (const m of text.matchAll(/\.route\(\s*"([^"]+)"/g)) r.routes.push({method:'ANY',path:m[1]});
+    for (const m of text.matchAll(/#\[(get|post|put|patch|delete)\(\s*"([^"]+)"/g)) r.routes.push({idx:m.index,method:m[1].toUpperCase(),path:m[2]});
+    for (const m of text.matchAll(/\.route\(\s*"([^"]+)"/g)) r.routes.push({idx:m.index,method:'ANY',path:m[1]});
     if (/^\s*(async\s+)?fn\s+main\s*\(/m.test(text)) r.entry = /(HttpServer|axum::serve|Router::new|rocket::build)/.test(text)?'server':'cli';
   } else if (['Java','Kotlin','Scala'].includes(lang)) {
     for (const m of text.matchAll(/^\s*import\s+(?:static\s+)?([\w.]+?)(?:\.\*|\._)?\s*;?\s*$/gm)) r.imports.push(m[1]+(/\.(\*|_)\s*;?\s*$/.test(m[0])?'.*':''));
     r.pkg = (text.match(/^\s*package\s+([\w.]+)/m)||[])[1];
     { const cm=text.match(/@RequestMapping\s*\(\s*(?:(?:value|path)\s*=\s*)?\{?\s*"([^"]*)"[^)]*\)\s*(?:@\w+(?:\([^)]*\))?\s*)*(?:public\s+|open\s+|abstract\s+)*(?:class|interface)\b/); const cp=cm?cm[1].replace(/^\/|\/$/g,''):'';
-      for (const m of text.matchAll(/@(Get|Post|Put|Patch|Delete|Request)Mapping\s*(?:\(\s*(?:(?:value|path)\s*=\s*)?\{?\s*"([^"]*)")?/g)) { if (cm && m.index===cm.index) continue; r.routes.push({method:m[1]==='Request'?'ANY':m[1].toUpperCase(),path:('/'+cp+'/'+(m[2]||'').replace(/^\//,'')).replace(/\/+/g,'/').replace(/(.)\/$/,'$1')}); } }
+      for (const m of text.matchAll(/@(Get|Post|Put|Patch|Delete|Request)Mapping\s*(?:\(\s*(?:(?:value|path)\s*=\s*)?\{?\s*"([^"]*)")?/g)) { if (cm && m.index===cm.index) continue; r.routes.push({idx:m.index,method:m[1]==='Request'?'ANY':m[1].toUpperCase(),path:('/'+cp+'/'+(m[2]||'').replace(/^\//,'')).replace(/\/+/g,'/').replace(/(.)\/$/,'$1')}); } }
     for (const m of text.matchAll(/@Entity\b[\s\S]{0,300}?class\s+(\w+)/g)) r.models.push({name:m[1],kind:'JPA entity'});
     for (const m of text.matchAll(/System\.getenv\(\s*"([A-Z][A-Z0-9_]{2,})"/g)) r.env.push(m[1]);
     if (/@SpringBootApplication/.test(text)) r.entry='server'; else if (/static\s+void\s+main\s*\(|fun\s+main\s*\(/.test(text)) r.entry='cli';
   } else if (lang==='Ruby') {
     for (const m of text.matchAll(/^\s*require_relative\s+['"]([^'"]+)['"]/gm)) r.imports.push({rel:m[1]});
     for (const m of text.matchAll(/^\s*require\s+['"]([^'"]+)['"]/gm)) r.imports.push({gem:m[1]});
-    if (/(^|\/)routes\.rb$/.test(f.path)) { for (const m of text.matchAll(/^\s*(get|post|put|patch|delete)\s+['"]([^'"]+)['"]/gm)) r.routes.push({method:m[1].toUpperCase(),path:'/'+m[2].replace(/^\//,'')}); for (const m of text.matchAll(/^\s*resources?\s+:(\w+)/gm)) r.routes.push({method:'REST',path:'/'+m[1]}); }
+    if (/(^|\/)routes\.rb$/.test(f.path)) { for (const m of text.matchAll(/^\s*(get|post|put|patch|delete)\s+['"]([^'"]+)['"]/gm)) r.routes.push({idx:m.index,method:m[1].toUpperCase(),path:'/'+m[2].replace(/^\//,'')}); for (const m of text.matchAll(/^\s*resources?\s+:(\w+)/gm)) r.routes.push({idx:m.index,method:'REST',path:'/'+m[1]}); }
     for (const m of text.matchAll(/^class\s+(\w+)\s*<\s*(?:ApplicationRecord|ActiveRecord::Base)/gm)) r.models.push({name:m[1],kind:'ActiveRecord model'});
     for (const m of text.matchAll(/ENV\[['"]([A-Z][A-Z0-9_]{2,})/g)) r.env.push(m[1]);
   } else if (lang==='PHP') {
     for (const m of text.matchAll(/^\s*use\s+([\w\\]+)(?:\s+as\s+\w+)?\s*;/gm)) r.imports.push(m[1]);
     r.pkg = (text.match(/^\s*namespace\s+([\w\\]+)/m)||[])[1];
-    for (const m of text.matchAll(/Route::(get|post|put|patch|delete|any)\(\s*['"]([^'"]+)/g)) r.routes.push({method:m[1].toUpperCase(),path:'/'+m[2].replace(/^\//,'')});
+    for (const m of text.matchAll(/Route::(get|post|put|patch|delete|any)\(\s*['"]([^'"]+)/g)) r.routes.push({idx:m.index,method:m[1].toUpperCase(),path:'/'+m[2].replace(/^\//,'')});
     for (const m of text.matchAll(/env\(\s*['"]([A-Z][A-Z0-9_]{2,})/g)) r.env.push(m[1]);
   } else if (lang==='C#') {
     for (const m of text.matchAll(/^\s*using\s+(?:static\s+)?([\w.]+)\s*;/gm)) r.imports.push(m[1]);
     r.ns = (text.match(/^\s*namespace\s+([\w.]+)/m)||[])[1];
-    for (const m of text.matchAll(/\[Http(Get|Post|Put|Patch|Delete)(?:\(\s*"([^"]*)")?/g)) r.routes.push({method:m[1].toUpperCase(),path:'/'+(m[2]||'').replace(/^\//,'')});
+    for (const m of text.matchAll(/\[Http(Get|Post|Put|Patch|Delete)(?:\(\s*"([^"]*)")?/g)) r.routes.push({idx:m.index,method:m[1].toUpperCase(),path:'/'+(m[2]||'').replace(/^\//,'')});
     if (/static\s+(async\s+)?(void|Task)\s+Main\s*\(|WebApplication\.CreateBuilder/.test(text)) r.entry='server';
   } else if (lang==='Visual Basic') {
     for (const m of text.matchAll(/^\s*Imports\s+(?:\w+\s*=\s*)?([\w.]+)/gim)) r.imports.push(m[1]);
@@ -507,6 +508,26 @@ function extractFile(f, text){
   } else if (lang==='Prisma') {
     for (const m of text.matchAll(/^model\s+(\w+)\s*\{/gm)) r.models.push({name:m[1],kind:'Prisma model'});
     const p = text.match(/provider\s*=\s*"(postgresql|mysql|sqlite|mongodb|sqlserver|cockroachdb)"/); if (p) r.dbProvider = p[1];
+  }
+  { const T = r._t||text; delete r._t;
+    const lineAt = i => { let n=1; for (let p=T.indexOf('\n'); p>=0 && p<i; p=T.indexOf('\n',p+1)) n++; return n; };
+    const isJs = JSFAM.includes(lang) || ext==='dart';
+    if (isJs && r.routes.length) {
+      const KW = new Set(['async','await','function','req','res','next','request','response','ctx','c','return','new','true','false','null','undefined','this']);
+      const sites = [];
+      for (const m of T.matchAll(/\.\s*(get|post|put|patch|delete|all)\s*\(/g)) {
+        const st = m.index + m[0].length; let d=1, p=st, q=null; for (; p<T.length && p<st+600 && d>0; p++) { const ch=T[p]; if (q) { if (ch==='\\') p++; else if (ch===q) q=null; } else if (ch==='"'||ch==="'"||ch==='`') q=ch; else if (ch==='('||ch==='['||ch==='{') d++; else if (ch===')'||ch===']'||ch==='}') d--; }
+        const args = T.slice(st, p-1);
+        let path = (args.match(/^\s*(['"`])(\/[^'"`]*)\1/)||[])[2];
+        if (path==null) { const back = T.slice(Math.max(0,m.index-400), m.index); const rm = [...back.matchAll(/\.route\(\s*(['"`])(\/[^'"`]*)\1\s*\)/g)].pop(); if (rm && !/;/.test(back.slice(rm.index+rm[0].length))) path = rm[2]; }
+        if (path==null) continue;
+        const parts = []; { let depth=0, cur='', qq=null; for (const ch of args) { if (qq) { cur+=ch; if (ch===qq) qq=null; continue; } if (ch==='"'||ch==="'"||ch==='`') { qq=ch; cur+=ch; continue; } if ('([{'.includes(ch)) depth++; else if (')]}'.includes(ch)) depth--; if (ch===',' && depth===0) { parts.push(cur); cur=''; } else cur+=ch; } if (cur.trim()) parts.push(cur); }
+        let h=null; for (let i=parts.length-1;i>=0;i--) { const a=parts[i].trim(); if (/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$/.test(a) && !KW.has(a)) { h=a; } break; }
+        sites.push({method:m[1].toUpperCase(), path, h, idx:m.index});
+      }
+      for (const rt of r.routes) { const s = sites.find(x=>!x.used && (x.method===rt.method||rt.method==='ALL'||x.method==='ALL') && x.path===rt.path); if (s) { s.used=true; rt.idx=s.idx; if (s.h) rt.h=s.h; } }
+    }
+    for (const rt of r.routes) { if (rt.idx!=null) { rt.line=lineAt(rt.idx); delete rt.idx; } }
   }
   return r;
 }
@@ -571,6 +592,7 @@ function extractFunctions(f, text){
     for (const m of text.matchAll(/^(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)\s*(?:<[^>(]*>)?\s*\(/gm)) { const e=brace(m.index); push(m[1], m.index, e>0?e:nextCol0(m.index)); }
     for (const m of text.matchAll(/^(?:exports|module\.exports|[A-Za-z_$][\w$]*(?:\.prototype)?)\.([A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?function\b[^(]*\(/gm)) { const e=brace(m.index); push(m[1], m.index, e>0?e:nextCol0(m.index)); }
     for (const m of text.matchAll(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::[^=\n]+)?=\s*(?:async\s*)?(?:function\b|\([^)]*\)\s*(?::\s*[^=\n]+?)?\s*=>|[A-Za-z_$][\w$]*\s*=>)/gm)) { const e=brace(m.index+m[0].length-2); push(m[1], m.index, e>0&&e-m.index<60000?e:nextCol0(m.index)); }
+    for (const m of text.matchAll(/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*[\w$.]+\(\s*(?:async\s*)?(?:function\b[^(]*\([^)]*\)|\([^)]*\)\s*=>|[A-Za-z_$][\w$]*\s*=>)/gm)) { const e=brace(m.index+m[0].length-2); push(m[1], m.index, e>0&&e-m.index<60000?e:nextCol0(m.index)); }
   } else if (L==='Python') {
     for (const m of text.matchAll(/^(?:async\s+)?def\s+(\w+)/gm)) push(m[1], m.index, nextCol0(m.index));
   } else if (L==='Go') {
@@ -1044,7 +1066,7 @@ async function analyzeRepo(input, opts = {}, onProgress = ()=>{}){
   const fileMod = new Map(); const pendingRecv = [];
   for (const [id, r] of raw) { const fx=r.funcs; if (!fx||!fx.funcs.length) continue; const f=files[id];
     const tops = fx.funcs.filter(x=>!x.recv);
-    if (tops.length && classes.length<CLASS_CAP+2000) { const isGo=f.lang==='Go'; const k={id:classes.length,name:base(f.path),kind:'module',fn:true,pk:(isGo?base(dirOf(f.path)):base(f.path).replace(/\.[^.]+$/,'')).toLowerCase(),file:id,comp:f.comp,line:tops[0].line,methods:tops.map(x=>x.name),mcalls:tops.map(x=>x.calls),mlines:tops.map(x=>x.line),types:fx.types||{},ext:[],impl:[],idents:new Set(tops.flatMap(x=>x.idents))}; classes.push(k); fileMod.set(id,k); }
+    if (tops.length && classes.length<CLASS_CAP+2000) { const isGo=f.lang==='Go'; const k={id:classes.length,name:base(f.path),kind:'module',fn:true,pk:(isGo?base(dirOf(f.path)):base(f.path).replace(/\.[^.]+$/,'')).toLowerCase(),file:id,comp:f.comp,line:tops[0].line,methods:tops.map(x=>x.name),mcalls:tops.map(x=>x.calls),mlines:tops.map(x=>x.line),types:fx.types||{},ext:[],impl:[],idents:new Set(tops.flatMap(x=>x.idents)),fidents:tops.map(x=>x.idents)}; classes.push(k); fileMod.set(id,k); }
     for (const x of fx.funcs) if (x.recv) pendingRecv.push({id,x,types:fx.types});
   }
   for (const {id,x,types} of pendingRecv) { const dir=dirOf(files[id].path); const c=(byName.get(x.recv.type)||[]).find(c=>!c.fn && files[c.file].lang===files[id].lang && (c.file===id||dirOf(files[c.file].path)===dir)); if (!c||c.methods.includes(x.name)||c.methods.length>=80) continue; c.methods.push(x.name); c.mcalls.push(x.calls); c.mlines.push(x.line); x.idents.forEach(i=>c.idents.add(i)); Object.assign(c.types, types||{}); }
@@ -1112,6 +1134,11 @@ async function analyzeRepo(input, opts = {}, onProgress = ()=>{}){
   }
   const callCountByComp = new Map(); for (const c of calls) { const cc=classes[c[0]].comp; if (cc>=0) callCountByComp.set(cc,(callCountByComp.get(cc)||0)+1); }
   for (const [cid,n] of callCountByComp) comps[cid].callCount = n;
+  { const modelByName = new Map(); models.forEach((m,i)=>{ if (m.name.length>=3 && !modelByName.has(m.name)) modelByName.set(m.name,i); });
+    const touch = ids => { const o=[]; if (ids) for (const x of ids) { const mi=modelByName.get(x); if (mi!=null && !o.includes(mi) && o.length<12) o.push(mi); } return o; };
+    for (const k of classes) { if (!k.idents || files[k.file].models.length) { delete k.fidents; continue; } let per;
+      if (k.fn && k.fidents) per = k.fidents.map(touch); else { const t = touch(k.idents).filter(mi=>models[mi].name!==k.name); per = k.methods.map(()=>t); }
+      if (per.some(x=>x.length)) k.mm = per; delete k.fidents; } }
   classes.forEach(c=>{ delete c.idents; });
   for (const k of classes) if (k.comp>=0 && !k.fn) comps[k.comp].classCount=(comps[k.comp].classCount||0)+1;
 
@@ -1217,6 +1244,18 @@ async function analyzeRepo(input, opts = {}, onProgress = ()=>{}){
   routes.sort((a,b)=>a.path.localeCompare(b.path));
   const uniqRoutes=[]; { const seen=new Set(); for (const r of routes) { const k=r.method+' '+r.path+' '+r.file; if(!seen.has(k)){seen.add(k);uniqRoutes.push(r);} } }
 
+  /* ---------- which function handles each route ---------- */
+  { const unitsByFile = new Map(); for (const k of classes) { if(!unitsByFile.has(k.file)) unitsByFile.set(k.file,[]); unitsByFile.get(k.file).push(k); }
+    const fidOf = new Map(files.map(f=>[f.path,f.id]));
+    const findIn = (fids, name, cls) => { for (const fid of fids) for (const k of (unitsByFile.get(fid)||[])) { if (cls && k.name!==cls) continue; const i=k.methods.indexOf(name); if (i>=0) return [k.id,i]; } return null; };
+    for (const rt of uniqRoutes) { const fid=fidOf.get(rt.file); if (fid==null||rt.method==='PAGE') continue; let hu=null;
+      if (rt.h) { const parts=rt.h.split('.'); const nm=parts[parts.length-1], q=parts.length>1?parts[parts.length-2]:null;
+        const imp=[fid,...files[fid].imports]; hu = findIn(imp,nm,null);
+        if (!hu) { const c=[]; for (const k of classes) { const i=k.methods.indexOf(nm); if (i>=0) c.push([k.id,i]); } const cm=c.filter(x=>classes[x[0]].comp===files[fid].comp); if (cm.length===1) hu=cm[0]; }
+        if (hu && q) { const alt=findIn(imp,nm,q); if (alt) hu=alt; } }
+      if (!hu && rt.line) { let best=null, bl=1e9; for (const k of (unitsByFile.get(fid)||[])) for (let i=0;i<k.methods.length;i++) { const ml=k.mlines&&k.mlines[i]; if (ml!=null && ml>=rt.line && ml-rt.line<=14 && (ml<bl || (best && ml===bl && k.line<classes[best[0]].line)) && (k.fn||k.line<=rt.line)) { bl=ml; best=[k.id,i]; } } hu=best; }
+      if (hu) { rt.hc=hu[0]; rt.hm=hu[1]; } delete rt.h; } }
+
   /* ---------- match client HTTP calls to backend routes ---------- */
   const apiCalls = []; const apiEdgeMap = new Map(); const clsByFile = new Map(); for (const k of classes) { let l=clsByFile.get(k.file); if(!l){l=[];clsByFile.set(k.file,l);} l.push(k); }
   {
@@ -1258,7 +1297,7 @@ async function analyzeRepo(input, opts = {}, onProgress = ()=>{}){
     repo:{owner,name:repo,branch,local:!!LOCAL,remote:LOCAL?(LOCAL.remote||null):null,url:meta.html_url,description:meta.description,stars:meta.stargazers_count,language:meta.language,license:meta.license&&meta.license.spdx_id,topics:meta.topics||[],pushed:meta.pushed_at,size:meta.size,forks:meta.forks_count,homepage:meta.homepage},
     stats:{...stats, sourceFiles:srcFiles.length, scanned:raw.size, scanTargets:toScan.length, budget, languages, testFiles:stats.byKind.test||0},
     files:files.map(f=>({id:f.id,path:f.path,size:f.size,ext:f.ext,kind:f.kind,lang:f.lang,comp:f.comp,scanned:f.scanned,loc:f.loc||0,imports:[...f.imports],importedBy:[...f.importedBy],externals:[...f.externals],routes:f.routes,models:f.models})),
-    classes:classes.map(c=>({id:c.id,name:c.name,kind:c.kind,fn:c.fn?1:0,file:c.file,comp:c.comp,line:c.line,methods:c.methods,mlines:c.mlines,ext:c.ext,impl:c.impl})), classEdges, calls, apiCalls:apiCalls.slice(0,4000), apiEdges, comps, edges:edgeList, fileEdges, services:services.map(s=>({...s,links:[...s.links.entries()]})),
+    classes:classes.map(c=>({mm:c.mm,id:c.id,name:c.name,kind:c.kind,fn:c.fn?1:0,file:c.file,comp:c.comp,line:c.line,methods:c.methods,mlines:c.mlines,ext:c.ext,impl:c.impl})), classEdges, calls, apiCalls:apiCalls.slice(0,4000), apiEdges, comps, edges:edgeList, fileEdges, services:services.map(s=>({...s,links:[...s.links.entries()]})),
     entries:entriesU, routes:uniqRoutes, models, env:envList,
     compose:{files:composeInfo, services:composeServices}, docker:dockerInfo, workflows, scripts, makeTargets, procfile, deployTargets,
     infraFiles:infraFiles.map(f=>f.path).slice(0,60),
@@ -1723,11 +1762,11 @@ function drawerHome(){
 }
 
 /* ---------------- tabs ---------------- */
-const TABS = [['overview','Overview'],['arch','Architecture'],['flows','Flows'],['api','API & Data'],['runtime','Runtime'],['files','Files'],['export','Export']];
+const TABS = [['overview','Overview'],['arch','Architecture'],['flows','Flows'],['api','API & Data'],['trace','Feature trace'],['runtime','Runtime'],['files','Files'],['export','Export']];
 function showTab(t){
   UI.tab=t; document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
   const p=$('#panel'); p.className='panel'+(t==='arch'||t==='files'?' flush':''); p.scrollTop=0;
-  ({overview:renderOverview,arch:renderArch,flows:renderFlows,api:renderApi,runtime:renderRuntime,files:renderFiles,export:renderExport})[t]();
+  ({overview:renderOverview,arch:renderArch,flows:renderFlows,api:renderApi,trace:renderTrace,runtime:renderRuntime,files:renderFiles,export:renderExport})[t]();
 }
 function insights(){
   const out=[]; const cs=A.comps;
@@ -1856,10 +1895,11 @@ function apiGraphData(){
 function apiCallRow(c){ const rt=c.rt>=0?A.routes[c.rt]:null; return `<li style="font-size:12px"><span class="method m-${c.method}">${c.method}</span> <span class="mono">${esc(c.path)}</span>${c.host?` <span class="pill">${esc(c.host)}</span>`:''}<br><a class="mono" href="${ghBlob(c.file)}#L${c.line}" target="_blank" rel="noopener">${esc(short(c.file,46))}:${c.line}</a>${c.cu>=0?` <span class="hint">(${esc(mname(c.cu,c.mu))})</span>`:''}${rt?`<br><span class="hint">→ handled by <span class="mono">${esc(rt.method)} ${esc(rt.path)}</span> in ${esc(base(rt.file))}</span>`:''}</li>`; }
 function apiDetail(n){
   const all=A.apiCalls||[]; let title, body, list=[];
-  if (n.epRt!=null) { const rt=A.routes[n.epRt]; list=all.filter(c=>c.rt===n.epRt); title=`<span class="method m-${rt.method}">${rt.method}</span> <span class="mono">${esc(rt.path)}</span>`; body=`<div class="hint">Handled in <a class="mono" href="${ghBlob(rt.file)}" target="_blank" rel="noopener">${esc(rt.file)}</a>${rt.comp>=0?' · '+compLink(rt.comp):''}</div><h5>${list.length} client call${list.length>1?'s':''}</h5>`; }
+  if (n.epRt!=null) { const rt=A.routes[n.epRt]; list=all.filter(c=>c.rt===n.epRt); title=`<span class="method m-${rt.method}">${rt.method}</span> <span class="mono">${esc(rt.path)}</span>`; body=`<div class="hint">Handled in <a class="mono" href="${ghBlob(rt.file)}" target="_blank" rel="noopener">${esc(rt.file)}</a>${rt.comp>=0?' · '+compLink(rt.comp):''}</div><div style="margin:8px 0"><button class="btn sm" id="trBtn">Trace this endpoint</button></div><h5>${list.length} client call${list.length>1?'s':''}</h5>`; }
   else if (n.unitKey) { const [cu,mu]=n.unitKey.split('.').map(Number); list=all.filter(c=>c.cu===cu&&c.mu===mu&&c.rt>=0); const callers=D.mIn.get(n.unitKey)||[]; title=`<b>${esc(mname(cu,mu))}</b>`; body=`<div class="hint">API client function in <a class="mono" href="${ghBlob(A.files[A.classes[cu].file].path)}" target="_blank" rel="noopener">${esc(A.files[A.classes[cu].file].path)}</a></div><h5>Makes ${list.length} HTTP call${list.length>1?'s':''}</h5>`; n._tail=`<h5>Called by ${callers.length} function${callers.length!==1?'s':''}</h5><div>${callers.slice(0,30).map(([a,b])=>`<span class="tag mono">${esc(mname(a,b))}</span>`).join('')||'<span class="hint">Nothing in the scanned code calls it directly.</span>'}</div>`; }
   else { const f=A.files[n.fileKey]; list=all.filter(c=>c.file===f.path&&c.rt>=0); title=`<b>${esc(base(f.path))}</b>`; body=`<div class="hint mono">${esc(f.path)}</div><h5>${list.length} HTTP call${list.length>1?'s':''} from this file</h5>`; }
   $('#apiDetail').innerHTML = `<div class="box"><div>${title}</div>${body}<ul class="clean">${list.slice(0,30).map(apiCallRow).join('')}</ul>${list.length>30?`<div class="hint">+${list.length-30} more</div>`:''}${n._tail||''}</div>`;
+  if ($('#trBtn')) $('#trBtn').onclick=()=>{ UI.trace.sel='r:'+n.epRt; UI.trace.q=''; showTab('trace'); };
   document.querySelectorAll('#apiDetail [data-comp]').forEach(a=>a.onclick=()=>{ showTab('arch'); setTimeout(()=>selectComp(+a.dataset.comp),50); });
 }
 function renderApi(){
@@ -1896,6 +1936,86 @@ function renderApi(){
     AGRAPH.set(gd.nodes,gd.edges,'layered',L); requestAnimationFrame(()=>AGRAPH.fit());
     document.querySelectorAll('#panel [data-rt]').forEach(a=>a.onclick=()=>{ const id='e'+a.dataset.rt, n=AGRAPH.byId.get(id); window.scrollTo&&$('#g3').scrollIntoView({block:'center',behavior:'smooth'}); if(n){ AGRAPH.select(id); AGRAPH.focus(id); apiDetail(n); } else apiDetail({epRt:+a.dataset.rt}); });
   } else document.querySelectorAll('#panel [data-rt]').forEach(a=>a.onclick=()=>apiDetail({epRt:+a.dataset.rt}));
+}
+
+/* ---------------- feature trace ---------------- */
+let TGRAPH=null;
+const featKey = p => { const s=p.split('/').filter(x=>x && !/^[:{\[<*]/.test(x)); while(s.length>1 && /^(api|rest|v\d+|public|private|internal)$/i.test(s[0])) s.shift(); return (s[0]||'/').toLowerCase(); };
+UI.trace = {sel:null, q:''};
+function traceUi(i){ return (A.apiCalls||[]).filter(c=>c.rt===i); }
+function traceGroups(){
+  if (TG && TG.A===A) return TG.g; const g=new Map();
+  A.routes.forEach((r,i)=>{ if (r.method==='PAGE') return; const k=featKey(r.path); if(!g.has(k)) g.set(k,{key:k,rts:[],ui:0,h:0}); const o=g.get(k); const ui=traceUi(i).length>0; o.rts.push({i,r,ui,h:r.hc!=null}); if(ui) o.ui++; if(r.hc!=null) o.h++; });
+  const arr=[...g.values()]; arr.forEach(o=>o.rts.sort((a,b)=>(b.ui-a.ui)||(b.h-a.h)||a.r.path.localeCompare(b.r.path)));
+  arr.sort((a,b)=>(b.ui-a.ui)||(b.h-a.h)||(b.rts.length-a.rts.length)||a.key.localeCompare(b.key)); TG={A,g:arr}; return arr;
+}
+let TG=null;
+function traceData(rts){
+  const N=new Map(), E=new Map(); let capped=false;
+  const colr = id => { const c=id>=0?A.comps[id]:null; return c?COMP_COLOR(c):undefined; };
+  const node=(id,o)=>{ let n=N.get(id); if(!n){ if(N.size>=140){ capped=true; return null; } n={id,weight:0,kind:'comp',...o}; N.set(id,n); } n.weight++; return n; };
+  const edge=(s,t,o)=>{ if(!N.has(s)||!N.has(t)||s===t) return; const k=s+'>'+t; if(!E.has(k)) E.set(k,{s,t,w:1,...o}); };
+  const unit=(c,m,col)=>{ const k=A.classes[c]; return node('u'+c+'.'+m,{col,label:k.fn?k.methods[m]:k.name+'.'+k.methods[m],sub:base(A.files[k.file].path),color:colr(k.comp),unitKey:c+'.'+m,title:mname(c,m)+'\n'+A.files[k.file].path}); };
+  const fileNode=(fid,sub,col)=>{ const f=A.files[fid]; return node('f'+fid,{col,label:base(f.path),sub,color:colr(f.comp),fileKey:fid,title:f.path}); };
+  const fileId=new Map(A.files.map(f=>[f.path,f.id])); const done=new Set(); let nHandlers=0;
+  for (const i of rts) {
+    const rt=A.routes[i]; const en=node('e'+i,{col:2,label:rt.method+' '+rt.path,sub:rt.comp>=0?A.comps[rt.comp].label:base(rt.file),color:colr(rt.comp),epRt:i,title:rt.method+' '+rt.path+'\n'+rt.file}); if(!en) continue;
+    for (const c of traceUi(i).slice(0,6)) {
+      let src;
+      if (c.cu>=0) { const un=unit(c.cu,c.mu,1); if(!un) continue; src=un.id; let seeded=0; for (const [ca,ma] of (D.mIn.get(c.cu+'.'+c.mu)||[])) { const kf=A.classes[ca]; if (A.files[kf.file].path===c.file) continue; if (seeded++>=4) break; const fn=fileNode(kf.file,'',0); if(!fn) break; edge(fn.id,src,{kind:'call',title:mname(ca,ma)+' calls '+mname(c.cu,c.mu)}); } }
+      else { const fn=fileNode(fileId.get(c.file),'calls the API directly',0); if(!fn) continue; src=fn.id; }
+      edge(src,'e'+i,{kind:'api',title:c.method+' '+c.path+'\n'+c.file+':'+c.line});
+    }
+    if (rt.hc!=null) {
+      const hn=unit(rt.hc,rt.hm,3); if(!hn) continue; edge('e'+i,hn.id,{kind:'call',title:'handled by '+mname(rt.hc,rt.hm)}); nHandlers++;
+      const q=[[rt.hc,rt.hm,0]]; const seen=new Set([rt.hc+'.'+rt.hm]);
+      while (q.length) { const [c,m,d]=q.shift(); if (d>=3) continue; const from='u'+c+'.'+m; if (done.has(from)) continue; done.add(from);
+        let n=0; for (const [cb,mb] of (D.mOut.get(c+'.'+m)||[])) { if (n>=8) break; const key=cb+'.'+mb; if (key===c+'.'+m) continue; const tn=unit(cb,mb,4+Math.min(d,1)); if(!tn) break; n++; edge(from,tn.id,{kind:'call',title:mname(c,m)+' calls '+mname(cb,mb)}); if(!seen.has(key)){ seen.add(key); q.push([cb,mb,d+1]); } } }
+    }
+  }
+  for (const n of [...N.values()]) { if (!n.unitKey) continue; const [c,m]=n.unitKey.split('.').map(Number); const mm=A.classes[c].mm&&A.classes[c].mm[m]; if (!mm||n.col<3) continue; for (const mi of mm.slice(0,4)) { const mo=A.models[mi]; const dn=node('d'+mi,{col:6,label:mo.name,sub:mo.kind,color:'var(--warn)',modelIdx:mi,title:mo.name+' ('+mo.kind+')\n'+mo.file}); if(dn) edge(n.id,dn.id,{kind:'data',title:mname(c,m)+' uses '+mo.name}); } }
+  return {nodes:[...N.values()], edges:[...E.values()], capped, nHandlers};
+}
+function traceSel(){ const s=UI.trace.sel||''; if (s[0]==='r') return {rts:[+s.slice(2)], title:null}; const g=traceGroups().find(x=>x.key===s.slice(2)); return g?{rts:g.rts.slice(0,10).map(x=>x.i), group:g}:{rts:[]}; }
+function traceDetail(n){
+  const el=$('#traceDetail'); let h='';
+  const callList=(arr,empty)=>arr.length?`<ul class="clean">${arr.slice(0,30).map(([c,mm])=>`<li><a class="link" data-method="${c}.${mm}">${esc(mname(c,mm))}</a></li>`).join('')}${arr.length>30?`<li class="hint">+${arr.length-30} more</li>`:''}</ul>`:`<div class="hint">${empty}</div>`;
+  if (n.epRt!=null) { const rt=A.routes[n.epRt], cs=traceUi(n.epRt); h=`<div><span class="method m-${rt.method}">${rt.method}</span> <span class="mono">${esc(rt.path)}</span></div><div class="hint">Defined in <a class="mono" href="${ghBlob(rt.file)}${rt.line?'#L'+rt.line:''}" target="_blank" rel="noopener">${esc(rt.file)}${rt.line?':'+rt.line:''}</a>${rt.comp>=0?' · '+compLink(rt.comp):''}</div>${rt.hc!=null?`<div class="hint">Handled by <a class="link" data-method="${rt.hc}.${rt.hm}">${esc(mname(rt.hc,rt.hm))}</a></div>`:'<div class="hint">The handler is written inline in the route file, so its calls are not traced.</div>'}<h5>${cs.length} UI call${cs.length!==1?'s':''}</h5>${cs.length?`<ul class="clean">${cs.slice(0,12).map(apiCallRow).join('')}</ul>`:'<div class="hint">No frontend request in this repo reaches it.</div>'}`; }
+  else if (n.unitKey) { const [c,m]=n.unitKey.split('.').map(Number), k=A.classes[c], key=n.unitKey, f=A.files[k.file]; const out=D.mOut.get(key)||[], inc=D.mIn.get(key)||[]; const ml=(k.mlines&&k.mlines[m])||k.line;
+    h=`<div><b>${esc(mname(c,m))}</b></div><div class="hint">${A.comps[k.comp]?compLink(k.comp)+' · ':''}<a class="mono" href="${ghBlob(f.path)}#L${ml}" target="_blank" rel="noopener">${esc(f.path)}:${ml}</a></div><div style="margin:8px 0"><button class="btn sm" data-focus="${key}">Open in call graph</button> <button class="btn sm" data-impact="${key}">What depends on this?</button></div><h5>Calls (${out.length})</h5>${callList(out,'Makes no calls to other known functions.')}<h5>Called by (${inc.length})</h5>${callList(inc,'No known callers.')}`; }
+  else if (n.modelIdx!=null) { const mo=A.models[n.modelIdx]; const users=A.classes.flatMap(k=>(k.mm||[]).flatMap((x,i)=>x.includes(n.modelIdx)?[[k.id,i]]:[])); h=`<div><b>${esc(mo.name)}</b> <span class="pill">${esc(mo.kind)}</span></div><div class="hint">Defined in <a class="mono" href="${ghBlob(mo.file)}" target="_blank" rel="noopener">${esc(mo.file)}</a></div><h5>Used by ${users.length} function${users.length!==1?'s':''}</h5>${callList(users,'None found.')}`; }
+  else { const f=A.files[n.fileKey]; const cs=(A.apiCalls||[]).filter(c=>c.file===f.path&&c.rt>=0); h=`<div><b>${esc(base(f.path))}</b></div><div class="hint mono"><a href="${ghBlob(f.path)}" target="_blank" rel="noopener">${esc(f.path)}</a></div><h5>${cs.length} HTTP call${cs.length!==1?'s':''} from this file</h5><ul class="clean">${cs.slice(0,12).map(apiCallRow).join('')}</ul>`; }
+  el.innerHTML=`<div class="box">${h}</div>`;
+  el.querySelectorAll('[data-comp]').forEach(a=>a.onclick=()=>{ showTab('arch'); setTimeout(()=>selectComp(+a.dataset.comp),50); });
+  el.querySelectorAll('[data-method]').forEach(a=>a.onclick=()=>{ const [c,m]=a.dataset.method.split('.').map(Number); focusMethod(c,m); });
+  el.querySelectorAll('[data-focus]').forEach(a=>a.onclick=()=>{ const [c,m]=a.dataset.focus.split('.').map(Number); focusMethod(c,m); });
+  el.querySelectorAll('[data-impact]').forEach(a=>a.onclick=()=>{ UI.impact={key:a.dataset.impact}; showTab('impact'); });
+}
+function renderTrace(){
+  const groups=traceGroups(); const q=UI.trace.q.toLowerCase();
+  if (!groups.length) { $('#panel').innerHTML=`<div class="wrap"><h3>Feature trace</h3><div class="callout">No HTTP endpoints were detected in this repo, so there is nothing to trace from. The Architecture tab still shows how the code is connected.</div></div>`; return; }
+  if (!UI.trace.sel) { const g=groups[0]; UI.trace.sel='g:'+g.key; }
+  const cur=traceSel(); const curKey=UI.trace.sel;
+  const vis = groups.map(g=>({g,rts:q?g.rts.filter(x=>(x.r.method+' '+x.r.path+' '+x.r.file+' '+g.key).toLowerCase().includes(q)):g.rts})).filter(x=>x.rts.length);
+  const row=x=>`<div class="trrow ${curKey==='r:'+x.i?'on':''}" data-r="${x.i}"><span class="method m-${x.r.method}">${x.r.method}</span> <span class="mono">${esc(short(x.r.path,34))}</span>${x.ui?' <span class="pill" title="A frontend request reaches this endpoint">UI</span>':''}${x.h?'':' <span class="hint" title="No handler function was identified">·</span>'}</div>`;
+  const list = vis.slice(0,80).map(({g,rts})=>{ const open=q||curKey==='g:'+g.key||(curKey[0]==='r'&&g.rts.some(x=>'r:'+x.i===curKey)); return `<div class="trgrp ${curKey==='g:'+g.key?'on':''}" data-g="${esc(g.key)}"><b>${esc(g.key)}</b> <span class="hint">${g.rts.length} endpoint${g.rts.length>1?'s':''}${g.ui?' · '+g.ui+' from UI':''}</span></div>${open?rts.slice(0,60).map(row).join(''):''}`; }).join('');
+  const td=traceData(cur.rts); const colMax=Math.max(1,...[0,1,2,3,4,5,6].map(k=>td.nodes.filter(n=>n.col===k).length)); const gh=Math.max(300,Math.min(640,Math.min(colMax,8)*66+110));
+  const title = cur.group ? `Feature “${esc(cur.group.key)}” <small>${cur.rts.length} endpoint${cur.rts.length>1?'s':''}${cur.group.rts.length>cur.rts.length?' of '+cur.group.rts.length:''}</small>` : `${esc(A.routes[cur.rts[0]].method)} ${esc(A.routes[cur.rts[0]].path)}`;
+  $('#panel').innerHTML=`<div class="wrap"><h3>Feature trace <small>follow one feature from the screen to the database</small></h3>
+   <p class="hint">Pick an area on the left. The graph reads left to right: the UI code that triggers it, the function that sends the request, the endpoint, the handler, what the handler calls, and the data models those functions touch. Click any box for its code location.</p>
+   <div class="tr-grid"><div class="box trlist"><input class="filter" id="trF" placeholder="Find a feature or endpoint…" value="${esc(UI.trace.q)}">${list||'<div class="hint" style="padding:8px">Nothing matches.</div>'}${vis.length>80?`<div class="hint" style="padding:8px">Showing 80 of ${vis.length} groups. Use the filter.</div>`:''}</div>
+   <div><h4 style="margin:0 0 6px">${title}</h4><div class="box" style="padding:0;height:${gh}px;position:relative;overflow:hidden"><div class="canvas" style="position:absolute;inset:0"><svg id="g5"></svg></div></div>
+   ${td.capped?'<div class="hint" style="margin-top:4px">Large feature: the graph is trimmed. Select a single endpoint to see all of it.</div>':''}
+   <div id="traceDetail" style="margin-top:10px"><div class="hint">Click a box to see where it lives, what it calls and who calls it.${td.nHandlers===0&&td.nodes.length?' (No handler function could be identified for these endpoints, so the trace stops at the endpoint.)':''}</div></div></div></div></div>`;
+  $('#trF').oninput=e=>{ UI.trace.q=e.target.value; const pos=e.target.selectionStart; renderTrace(); const i=$('#trF'); i.focus(); i.setSelectionRange(pos,pos); };
+  document.querySelectorAll('#panel .trgrp').forEach(a=>a.onclick=()=>{ UI.trace.sel='g:'+a.dataset.g; renderTrace(); });
+  document.querySelectorAll('#panel .trrow').forEach(a=>a.onclick=()=>{ UI.trace.sel='r:'+a.dataset.r; renderTrace(); });
+  if (td.nodes.length) {
+    TGRAPH=GraphView($('#g5'),{node:n=>{ TGRAPH.select(n.id); traceDetail(n); }, edge:()=>{}, background:()=>{ TGRAPH.select(null); }});
+    const L=layeredLayout(td.nodes,td.edges,n=>n.col,{titles:['UI that triggers it','Function that sends the request','Endpoint','Handler','Calls','Then calls','Data touched'],h:52,maxRows:9});
+    TGRAPH.set(td.nodes,td.edges,'layered',L); requestAnimationFrame(()=>TGRAPH.fit());
+    const first=td.nodes.find(n=>n.epRt!=null); if (first && cur.rts.length===1) { TGRAPH.select(first.id); traceDetail(first); }
+  } else $('#g5').parentNode.innerHTML='<div class="hint" style="padding:16px">Nothing to draw for this selection.</div>';
 }
 
 let RGRAPH=null;
