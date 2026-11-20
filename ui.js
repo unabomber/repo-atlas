@@ -30,7 +30,9 @@ function derive(){
   edges.forEach(e=>{ out[e.s].push(e); inc[e.t].push(e); });
   const cOut = new Map(), cInc = new Map();
   (A.classEdges||[]).forEach(([a,b,t])=>{ if(!cOut.has(a))cOut.set(a,[]); cOut.get(a).push([b,t]); if(!cInc.has(b))cInc.set(b,[]); cInc.get(b).push([a,t]); });
-  D = {edges, svcEdges, inc, out, col, cOut, cInc};
+  const mOut = new Map(), mIn = new Map();
+  (A.calls||[]).forEach(([ca,ma,cb,mb])=>{ const a=ca+'.'+ma, b=cb+'.'+mb; if(!mOut.has(a))mOut.set(a,[]); mOut.get(a).push([cb,mb]); if(!mIn.has(b))mIn.set(b,[]); mIn.get(b).push([ca,ma]); });
+  D = {edges, svcEdges, inc, out, col, cOut, cInc, mOut, mIn};
 }
 function describeComp(c){
   const langs = Object.entries(c.langs).sort((a,b)=>b[1]-a[1]).slice(0,2).map(x=>x[0]).join(' / ');
@@ -53,6 +55,7 @@ function GraphView(svg, cb){
   const mk = (n,a={},p) => { const e=document.createElementNS(NS,n); for (const k in a) e.setAttribute(k,a[k]); if(p)p.appendChild(e); return e; };
   svg.innerHTML = `<defs>${[['n','var(--edge)'],['o','var(--out)'],['i','var(--in)'],['w','var(--warn)']].map(([id,c])=>`<marker id="a-${id}-${svg.id}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 1 L10 5 L0 9 z" fill="${c}"/></marker>`).join('')+`<marker id="a-x-${svg.id}" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="10" markerHeight="10" orient="auto-start-reverse"><path d="M1 1 L11 6 L1 11 z" fill="var(--card)" stroke="var(--acc)" stroke-width="1.5"/></marker>`}</defs><g class="vp"><g class="lanes"></g><g class="hdr"></g><g class="edges"></g><g class="nodes"></g></g>`;
   const vp = svg.querySelector('.vp'), gL = svg.querySelector('.lanes'), gH = svg.querySelector('.hdr'), gE = svg.querySelector('.edges'), gN = svg.querySelector('.nodes');
+  let grpEls = [];
   const G = {nodes:[], edges:[], mode:'layered', byId:new Map(), view:{x:0,y:0,k:1}, sel:null, nodeEls:new Map(), edgeEls:[]};
   const mid = id => `url(#a-${id}-${svg.id})`;
   const apply = () => vp.setAttribute('transform',`translate(${G.view.x} ${G.view.y}) scale(${G.view.k})`);
@@ -71,6 +74,7 @@ function GraphView(svg, cb){
     a=anchor(s,'l'); b=anchor(t,'r'); const o=Math.max(40,(a.x-b.x)/2); return `M${a.x},${a.y} C${a.x-o},${a.y} ${b.x+o},${b.y} ${b.x},${b.y}`;
   }
   function setPos(n){ const el=G.nodeEls.get(n.id); if(el) el.setAttribute('transform', G.mode==='force'?`translate(${n.x},${n.y})`:`translate(${n.x},${n.y})`); }
+  function updGroups(){ for (const g of grpEls) { const m=G.nodes.filter(n=>n.grp===g.id); if(!m.length) continue; const cx=m.reduce((a,n)=>a+n.x,0)/m.length, cy=m.reduce((a,n)=>a+n.y,0)/m.length; const r=Math.max(...m.map(n=>Math.hypot(n.x-cx,n.y-cy)+(n.r||8)))+28; g.c.setAttribute('cx',cx); g.c.setAttribute('cy',cy); g.c.setAttribute('r',r); g.t.setAttribute('x',cx); g.t.setAttribute('y',cy-r-6); } }
   function updEdges(id){ for (const o of G.edgeEls) if (!id || o.e.s===id || o.e.t===id) { const d=pathFor(o.e); o.line.setAttribute('d',d); o.hit.setAttribute('d',d); } }
 
   function buildNode(n){
@@ -101,6 +105,7 @@ function GraphView(svg, cb){
     gL.innerHTML=gH.innerHTML=gE.innerHTML=gN.innerHTML=''; G.nodeEls.clear(); G.edgeEls=[];
     G.byId = new Map(G.nodes.map(n=>[n.id,n]));
     for (const l of (G.lanes||[])) mk('rect',{class:'lane',x:l.x,y:l.y,width:l.w,height:l.h,rx:14},gL);
+    grpEls = (G.groups||[]).map(g=>{ const c=mk('circle',{class:'lane',style:`stroke:${g.color};fill:color-mix(in srgb,${g.color} 7%,transparent)`},gL); const t=mk('text',{class:'colhdr','text-anchor':'middle',style:`fill:${g.color}`},gL); t.textContent=short(g.label,28); return {id:g.id,c,t}; });
     for (const h of (G.headers||[])) { const t=mk('text',{class:'colhdr',x:h.x,y:h.y},gH); t.textContent=h.text; }
     const maxw = Math.max(1,...G.edges.map(e=>e.w||0));
     for (const e of G.edges) {
@@ -115,12 +120,13 @@ function GraphView(svg, cb){
     }
     updEdges();
     for (const n of G.nodes) { const g=buildNode(n); gN.appendChild(g); G.nodeEls.set(n.id,g); setPos(n); wireNode(g,n); }
+    updGroups();
     select(G.sel&&G.byId.has(G.sel)?G.sel:null, true);
   }
   function wireNode(g,n){
     let sx,sy,ox,oy,moved=false,down=false;
     g.addEventListener('pointerdown',ev=>{ ev.stopPropagation(); down=true; moved=false; sx=ev.clientX; sy=ev.clientY; ox=n.x; oy=n.y; g.setPointerCapture(ev.pointerId); });
-    g.addEventListener('pointermove',ev=>{ if(!down) return; const dx=ev.clientX-sx, dy=ev.clientY-sy; if(!moved && Math.hypot(dx,dy)>4) moved=true; if(moved){ n.x=ox+dx/G.view.k; n.y=oy+dy/G.view.k; setPos(n); updEdges(n.id); } });
+    g.addEventListener('pointermove',ev=>{ if(!down) return; const dx=ev.clientX-sx, dy=ev.clientY-sy; if(!moved && Math.hypot(dx,dy)>4) moved=true; if(moved){ n.x=ox+dx/G.view.k; n.y=oy+dy/G.view.k; setPos(n); updEdges(n.id); updGroups(); } });
     g.addEventListener('pointerup',ev=>{ down=false; if(!moved){ cb.node&&cb.node(n); } });
   }
   function select(id, silent){
@@ -156,7 +162,7 @@ function GraphView(svg, cb){
   svg.addEventListener('pointermove',ev=>{ if(!pan)return; const dx=ev.clientX-pan.x, dy=ev.clientY-pan.y; if(Math.hypot(dx,dy)>3)pan.moved=true; G.view.x=pan.vx+dx; G.view.y=pan.vy+dy; apply(); });
   svg.addEventListener('pointerup',()=>{ if(pan&&!pan.moved){ cb.background&&cb.background(); } pan=null; svg.classList.remove('pan'); });
   svg.addEventListener('wheel',ev=>{ ev.preventDefault(); const r=svg.getBoundingClientRect(); const mx=ev.clientX-r.left,my=ev.clientY-r.top; const f=Math.exp(-ev.deltaY*0.0015); const nk=Math.max(.05,Math.min(3,G.view.k*f)); G.view.x=mx-(mx-G.view.x)*(nk/G.view.k); G.view.y=my-(my-G.view.y)*(nk/G.view.k); G.view.k=nk; apply(); },{passive:false});
-  G.set = (nodes,edges,mode,extra={}) => { G.nodes=nodes; G.edges=edges; G.mode=mode; G.headers=extra.headers; G.lanes=extra.lanes; render(); };
+  G.set = (nodes,edges,mode,extra={}) => { G.nodes=nodes; G.edges=edges; G.mode=mode; G.headers=extra.headers; G.lanes=extra.lanes; G.groups=extra.groups; render(); };
   G.select=select; G.fit=fit; G.focus=id=>{ const n=G.byId.get(id); if(!n)return; const r=svg.getBoundingClientRect(); const cx=G.mode==='force'?n.x:n.x+n.w/2, cy=G.mode==='force'?n.y:n.y+n.h/2; G.view.x=r.width/2-cx*G.view.k; G.view.y=r.height/2-cy*G.view.k; apply(); };
   return G;
 }
@@ -188,8 +194,9 @@ function forceLayout(nodes, edges, W=900, H=600){
   const k = Math.sqrt(W*H/Math.max(n,1))*0.85;
   for (let it=0; it<320; it++) {
     const t = 1 - it/320;
-    for (let i=0;i<n;i++) for (let j=i+1;j<n;j++) { const a=nodes[i], b=nodes[j]; let dx=a.x-b.x, dy=a.y-b.y, d2=dx*dx+dy*dy||.01, d=Math.sqrt(d2); const minD=a.r+b.r+26; const f=(k*k/d2)*0.9 + (d<minD?(minD-d)*0.2:0); const fx=dx/d*f, fy=dy/d*f; a.vx+=fx; a.vy+=fy; b.vx-=fx; b.vy-=fy; }
+    for (let i=0;i<n;i++) for (let j=i+1;j<n;j++) { const a=nodes[i], b=nodes[j]; let dx=a.x-b.x, dy=a.y-b.y, d2=dx*dx+dy*dy||.01, d=Math.sqrt(d2); const minD=a.r+b.r+26+(a.grp!=null&&a.grp!==b.grp?44:0); const f=(k*k/d2)*0.9 + (d<minD?(minD-d)*0.2:0); const fx=dx/d*f, fy=dy/d*f; a.vx+=fx; a.vy+=fy; b.vx-=fx; b.vy-=fy; }
     for (const [i,j] of links) { const a=nodes[i], b=nodes[j]; const dx=b.x-a.x, dy=b.y-a.y, d=Math.hypot(dx,dy)||.01; const f=(d-k*0.9)*0.035; const fx=dx/d*f, fy=dy/d*f; a.vx+=fx; a.vy+=fy; b.vx-=fx; b.vy-=fy; }
+    if (nodes.some(p=>p.grp!=null)) { const cen=new Map(); for (const p of nodes) { if(p.grp==null)continue; let c=cen.get(p.grp); if(!c){c={x:0,y:0,n:0};cen.set(p.grp,c);} c.x+=p.x; c.y+=p.y; c.n++; } const gs=[...cen.entries()].map(([id,c])=>({id,x:c.x/c.n,y:c.y/c.n,r:34+16*Math.sqrt(c.n),px:0,py:0})); for (let i=0;i<gs.length;i++) for (let j=i+1;j<gs.length;j++) { const a=gs[i],b=gs[j]; let dx=a.x-b.x,dy=a.y-b.y,d=Math.hypot(dx,dy)||.1; const need=a.r+b.r; if(d<need){ const f=(need-d)*0.35; a.px+=dx/d*f; a.py+=dy/d*f; b.px-=dx/d*f; b.py-=dy/d*f; } } const gm=new Map(gs.map(g=>[g.id,g])); for (const p of nodes) { const c=p.grp!=null&&cen.get(p.grp); if(c){ const g=gm.get(p.grp); p.vx+=(c.x/c.n-p.x)*0.07+g.px; p.vy+=(c.y/c.n-p.y)*0.07+g.py; } } }
     for (const p of nodes) { p.vx+=(W/2-p.x)*0.004; p.vy+=(H/2-p.y)*0.004; const sp=Math.hypot(p.vx,p.vy)||1, cap=40*t+2; if(sp>cap){p.vx*=cap/sp;p.vy*=cap/sp;} p.x+=p.vx; p.y+=p.vy; p.vx*=0.5; p.vy*=0.5; }
   }
 }
@@ -240,6 +247,7 @@ function drawDrill(cid){
 
 /* ---------------- drawer ---------------- */
 function selectNode(n){
+  if (n.mkey) { UI.sel=null; GRAPH.select(n.id); const [c,m]=n.mkey.split('.').map(Number); drawerMethod(A.classes[c],m); return; }
   if (n.kid!=null) { UI.sel=null; GRAPH.select('k'+n.kid); drawerClass(A.classes[n.kid]); return; }
   if (n.kind==='comp'||n.kind==='ghost') { UI.sel='c'+n.cid; GRAPH.select(UI.sel); drawerComp(A.comps[n.cid]); }
   else if (n.kind==='svc') { UI.sel=n.id; GRAPH.select(UI.sel); drawerSvc(A.services[n.sidx]); }
@@ -260,7 +268,7 @@ function drawerComp(c){
    <div class="hint" style="font-size:13px;color:var(--text)">${esc(describeComp(c))}</div>
    <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
      <select class="btn sm" id="roleSel" title="Reassign this component's layer">${ROLE_ORDER.map(r=>`<option value="${r}"${r===c.role?' selected':''}>${ROLE_LABEL[r]}</option>`).join('')}</select>
-     <button class="btn sm" id="drillBtn">Explore files →</button>${c.classCount?`<button class="btn sm" id="clsBtn">Explore classes (${c.classCount}) →</button>`:''}
+     <button class="btn sm" id="drillBtn">Explore files →</button>${c.classCount?`<button class="btn sm" id="clsBtn">Explore classes (${c.classCount}) →</button>`:''}${c.callCount?`<button class="btn sm" id="mthBtn">Method calls (${c.callCount}) →</button>`:''}
      ${c.path?`<a class="btn sm" href="${ghTree(c.path)}" target="_blank" rel="noopener">GitHub ↗</a>`:''}
    </div>
    ${c.pkg?`<h5>Package</h5><div class="mono">${esc(c.pkg.name||'')} <span class="hint">(${esc(c.pkg.eco)})</span></div>`:''}
@@ -277,18 +285,19 @@ function drawerComp(c){
   wireDrawer();
   $('#roleSel').onchange = e => { c.role=e.target.value; c.roleGuessed=false; derive(); drawArch(); drawerComp(c); };
   $('#drillBtn').onclick = () => { UI.drill=c.id; UI.drillMode='files'; drawDrill(c.id); drawerDrillHead(c); };
+  if ($('#mthBtn')) $('#mthBtn').onclick = () => { UI.drill=c.id; UI.drillMode='methods'; drawMethods(c.id); drawerDrillHead(c); };
   if ($('#clsBtn')) $('#clsBtn').onclick = () => { UI.drill=c.id; UI.drillMode='classes'; drawClasses(c.id); drawerDrillHead(c); };
 }
 function drawerDrillHead(c){
   const n = c.classCount||0;
   $('#drawer').innerHTML = `<h4>${esc(c.label)}</h4>
-   <div class="toolbar-in" style="margin:8px 0"><div class="grp2"><button data-m="files" class="${UI.drillMode==='files'?'on':''}">Files</button><button data-m="classes" class="${UI.drillMode==='classes'?'on':''}" ${n?'':'disabled title="No classes/types detected here"'}>Classes${n?' ('+n+')':''}</button></div></div>
-   <div class="hint">${UI.drillMode==='classes'
+   <div class="toolbar-in" style="margin:8px 0"><div class="grp2"><button data-m="files" class="${UI.drillMode==='files'?'on':''}">Files</button><button data-m="classes" class="${UI.drillMode==='classes'?'on':''}" ${n?'':'disabled title="No classes/types detected here"'}>Classes${n?' ('+n+')':''}</button><button data-m="methods" class="${UI.drillMode==='methods'?'on':''}" ${c.callCount?'':'disabled title="No calls between class methods detected here"'}>Methods${c.callCount?' ('+c.callCount+')':''}</button></div></div>
+   <div class="hint">${UI.drillMode==='methods' ? 'Each circle is a method, grouped inside a dashed ring per class. Arrows read “calls”: <b style="color:var(--acc)">blue</b> across classes, dotted within one class. Calls are matched by method name and the receiver’s declared type, so treat them as a very good guess, not a compiler.' : UI.drillMode==='classes'
      ? 'Each circle is a class / interface / type. <b style="color:var(--acc)">Solid arrow + hollow head</b> = extends, <b style="color:var(--acc)">dashed</b> = implements, <span>thin grey</span> = uses (mentions the type in its body). Dashed circles belong to other components.'
      : 'File-level view: circles are files (size ∝ bytes), arrows are imports. Dashed circles are other components these files touch.'}</div>
-   <div style="margin:10px 0"><button class="btn sm" id="backBtn">← Back to architecture</button></div><div class="hint">Click a ${UI.drillMode==='classes'?'class':'file'} for details.</div>`;
+   <div style="margin:10px 0"><button class="btn sm" id="backBtn">← Back to architecture</button></div><div class="hint">Click a ${UI.drillMode==='classes'?'class':UI.drillMode==='methods'?'method':'file'} for details.</div>`;
   $('#backBtn').onclick = () => { UI.drill=null; drawArch(); drawerComp(c); };
-  document.querySelectorAll('#drawer [data-m]').forEach(b=>b.onclick=()=>{ if(b.disabled) return; UI.drillMode=b.dataset.m; UI.drillMode==='classes'?drawClasses(c.id):drawDrill(c.id); drawerDrillHead(c); });
+  document.querySelectorAll('#drawer [data-m]').forEach(b=>b.onclick=()=>{ if(b.disabled) return; UI.drillMode=b.dataset.m; ({classes:()=>drawClasses(c.id),methods:()=>drawMethods(c.id),files:()=>drawDrill(c.id)})[UI.drillMode](); drawerDrillHead(c); });
 }
 
 /* ---------------- classes ---------------- */
@@ -331,15 +340,63 @@ function drawerClass(k){
   $('#drawer').innerHTML = `<h4>${esc(k.name)}</h4>
    <div style="margin:6px 0 8px"><span class="pill"><i style="background:${KIND_COLOR[k.kind]||COMP_COLOR(comp)}"></i>${esc(k.kind)}</span> ${comp?`<a class="link" data-comp="${comp.id}" style="font-size:12.5px">${esc(comp.label)}</a>`:''}</div>
    <div class="mono hint" style="word-break:break-all"><a href="${ghBlob(f.path)}#L${k.line}" target="_blank" rel="noopener">${esc(f.path)}:${k.line}</a></div>
-   ${comp?`<div style="margin:10px 0"><button class="btn sm" id="bcBack">← All classes in ${esc(short(comp.label,26))}</button></div>`:''}
+   ${comp?`<div style="margin:10px 0;display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm" id="bcBack">← All classes in ${esc(short(comp.label,22))}</button>${hasCalls(k.id)?'<button class="btn sm" id="mcBtn">Method calls →</button>':''}</div>`:''}
    ${parents.length||ifaces.length?`<h5>Inherits from</h5>${list(parents.concat(ifaces),'')}`:''}
    ${subs.length||impls.length?`<h5>Subclasses / implementations (${subs.length+impls.length})</h5>${list(subs.concat(impls),'')}`:''}
    <h5>Uses (${uses.length})</h5>${list(uses,'No other classes in the repo referenced.')}
    <h5>Used by (${usedBy.length})</h5>${list(usedBy,'Nothing else in the scanned code references it.')}
-   ${k.methods.length?`<h5>Members (${k.methods.length}${k.methods.length>=60?'+':''})</h5><div>${k.methods.map(m=>`<span class="tag mono">${esc(m)}</span>`).join('')}</div>`:''}
+   ${k.methods.length?`<h5>Members (${k.methods.length}${k.methods.length>=60?'+':''})</h5><div>${k.methods.map((m,i)=>{ const key=k.id+'.'+i; return (D.mOut.has(key)||D.mIn.has(key))?`<a class="tag mono link" data-method="${key}" title="has call links">${esc(m)} ⇄</a>`:`<span class="tag mono">${esc(m)}</span>`; }).join('')}</div>`:''}
    <div class="hint" style="margin-top:14px">“Uses” is detected by name: the class body mentions another declared type. Ambiguous names (declared in several places) are skipped.</div>`;
   wireDrawer();
+  if ($('#mcBtn')) $('#mcBtn').onclick=()=>{ UI.drill=k.comp; UI.drillMode='methods'; drawMethods(k.comp,k.id); };
   if ($('#bcBack')) $('#bcBack').onclick=()=>{ UI.drillMode='classes'; drawClasses(comp.id); drawerDrillHead(comp); };
+}
+
+/* ---------------- methods ---------------- */
+const hasCalls = cid => { for (const k of D.mOut.keys()) if (+k.split('.')[0]===cid) return true; for (const k of D.mIn.keys()) if (+k.split('.')[0]===cid) return true; return false; };
+const clsHue = id => `hsl(${(id*47+20)%360} 62% 52%)`;
+const mname = (c,m) => `${A.classes[c].name}.${A.classes[c].methods[m]}`;
+function drawMethods(cid, focusCls, focusKey){
+  const calls = A.calls||[]; const deg = new Map(); calls.forEach(([a,b,c,d])=>{ const x=a+'.'+b, y=c+'.'+d; deg.set(x,(deg.get(x)||0)+1); deg.set(y,(deg.get(y)||0)+1); });
+  let sel; const mine = new Set(), ghost = new Set(), E = [];
+  if (focusCls!=null) {
+    A.classes[focusCls].methods.forEach((_,i)=>mine.add(focusCls+'.'+i));
+    for (const [a,b,c,d] of calls) { const x=a+'.'+b, y=c+'.'+d; if (mine.has(x)||mine.has(y)) { E.push([x,y,a===c]); if(!mine.has(x)&&ghost.size<45) ghost.add(x); if(!mine.has(y)&&ghost.size<45) ghost.add(y); } }
+  } else {
+    const rel = calls.filter(([a,b,c,d])=>A.classes[a].comp===cid||A.classes[c].comp===cid);
+    const cand = new Map(); rel.forEach(([a,b,c,d])=>{ [a+'.'+b,c+'.'+d].forEach(k=>cand.set(k,(deg.get(k)||0))); });
+    const inComp = k=>A.classes[+k.split('.')[0]].comp===cid;
+    const ranked = [...cand.keys()].sort((x,y)=>(inComp(y)-inComp(x))||(cand.get(y)-cand.get(x)));
+    ranked.slice(0,100).forEach(k=>(inComp(k)?mine:ghost).add(k));
+    for (const [a,b,c,d] of rel) E.push([a+'.'+b,c+'.'+d,a===c]);
+  }
+  if (focusKey) { mine.add(focusKey); }
+  const all = new Set([...mine,...ghost]); const edges=[], seen=new Set();
+  for (const [x,y,same] of E) { if(!all.has(x)||!all.has(y)) continue; const k=x+'>'+y; if(seen.has(k)) continue; seen.add(k); const [a,b]=x.split('.').map(Number), [c,d]=y.split('.').map(Number); edges.push({s:'m'+x,t:'m'+y,w:1,kind:same?'self':'call',title:`${mname(a,b)} calls ${mname(c,d)}`}); }
+  const used = new Set(); edges.forEach(e=>{ used.add(e.s); used.add(e.t); });
+  const nodes=[], groups=new Map();
+  for (const k of all) { if (!used.has('m'+k) && !(focusCls!=null && mine.has(k)) && k!==focusKey) continue; const [c,m]=k.split('.').map(Number); const cl=A.classes[c]; const isG=!mine.has(k);
+    nodes.push({id:'m'+k,kind:isG?'ghost':'method',mkey:k,label:cl.methods[m],sub:isG?cl.name+' · '+short(A.comps[cl.comp]?A.comps[cl.comp].label:'',14):'',color:clsHue(c),grp:c,r:6+Math.min(11,(deg.get(k)||0)*0.9),title:mname(c,m)+'\n'+A.files[cl.file].path});
+    if(!groups.has(c)) groups.set(c,{id:c,label:cl.name,color:clsHue(c)}); }
+  if (!nodes.length) { forceLayout([],[]); GRAPH.set([],[],'force'); return; }
+  const ids=new Set(nodes.map(n=>n.id)); const ed=edges.filter(e=>ids.has(e.s)&&ids.has(e.t));
+  forceLayout(nodes,ed,1200,800); GRAPH.set(nodes,ed,'force',{groups:[...groups.values()]}); requestAnimationFrame(()=>GRAPH.fit());
+}
+function focusMethod(c,m){
+  const k=A.classes[c]; const go=()=>{ UI.drill=k.comp; UI.drillMode='methods'; drawMethods(k.comp,c,c+'.'+m); GRAPH.select('m'+c+'.'+m); GRAPH.focus('m'+c+'.'+m); drawerMethod(k,m); };
+  if (UI.tab!=='arch') { showTab('arch'); setTimeout(go,60); } else go();
+}
+function drawerMethod(k,m){
+  const key=k.id+'.'+m, out=D.mOut.get(key)||[], inc=D.mIn.get(key)||[]; const f=A.files[k.file]; const comp=A.comps[k.comp];
+  const list=(arr,empty)=>arr.length?`<ul class="clean">${arr.slice(0,40).map(([c,mm])=>`<li><a class="link" data-method="${c}.${mm}">${esc(mname(c,mm))}</a>${c===k.id?'<span class="w">same class</span>':`<span class="w">${esc(short(A.comps[A.classes[c].comp]?A.comps[A.classes[c].comp].label:'',20))}</span>`}</li>`).join('')}${arr.length>40?`<li class="hint">+${arr.length-40} more</li>`:''}</ul>`:`<div class="hint">${empty}</div>`;
+  $('#drawer').innerHTML=`<h4>${esc(k.methods[m])}()</h4>
+   <div style="margin:6px 0 8px"><span class="pill"><i style="background:${clsHue(k.id)}"></i>method of <a class="link" data-class="${k.id}">${esc(k.name)}</a></span> ${comp?`<a class="link" data-comp="${comp.id}" style="font-size:12.5px">${esc(comp.label)}</a>`:''}</div>
+   <div class="mono hint" style="word-break:break-all"><a href="${ghBlob(f.path)}#L${(k.mlines&&k.mlines[m])||k.line}" target="_blank" rel="noopener">${esc(f.path)}:${(k.mlines&&k.mlines[m])||k.line}</a></div>
+   <div style="margin:10px 0"><button class="btn sm" id="mAll">Show all ${esc(k.name)} calls</button></div>
+   <h5>Calls (${out.length})</h5>${list(out,'Makes no calls to other known methods.')}
+   <h5>Called by (${inc.length})</h5>${list(inc,'No known callers in the scanned code.')}
+   <div class="hint" style="margin-top:14px">Calls are resolved from the receiver’s declared type or a unique method name; dynamic dispatch, reflection and lambdas can be missed.</div>`;
+  wireDrawer(); $('#mAll').onclick=()=>{ UI.drillMode='methods'; drawMethods(k.comp,k.id); };
 }
 function drawerSvc(s){
   const i = A.services.indexOf(s);
@@ -371,6 +428,7 @@ function drawerFile(f){
 function wireDrawer(){
   document.querySelectorAll('#drawer [data-comp]').forEach(a=>a.onclick=()=>selectComp(+a.dataset.comp));
   document.querySelectorAll('#drawer [data-class]').forEach(a=>a.onclick=()=>focusClass(+a.dataset.class));
+  document.querySelectorAll('#drawer [data-method]').forEach(a=>a.onclick=()=>{ const [c,m]=a.dataset.method.split('.').map(Number); focusMethod(c,m); });
   document.querySelectorAll('#drawer [data-svc]').forEach(a=>a.onclick=()=>{ const i=+a.dataset.svc; UI.sel='x'+i; GRAPH.select(UI.sel); GRAPH.focus&&GRAPH.focus(UI.sel); drawerSvc(A.services[i]); });
 }
 function drawerHome(){
@@ -425,7 +483,7 @@ function renderOverview(){
     <div class="stat"><b>${fmt(s.totalFiles)}</b><span>files in repo</span></div><div class="stat"><b>${fmt(s.sourceFiles)}</b><span>source files</span></div>
     <div class="stat"><b>${A.comps.length}</b><span>components</span></div><div class="stat"><b>${D.edges.length}</b><span>component links</span></div>
     <div class="stat"><b>${A.services.length}</b><span>external systems</span></div><div class="stat"><b>${A.routes.filter(x=>x.method!=='PAGE').length}</b><span>endpoints</span></div>
-    <div class="stat"><b>${A.models.length}</b><span>data models</span></div><div class="stat"><b>${A.entries.length}</b><span>entry points</span></div>${(A.classes||[]).length?`<div class="stat"><b>${fmt(A.classes.length)}</b><span>classes & types</span></div><div class="stat"><b>${(A.classEdges||[]).filter(e=>e[2]>0).length}</b><span>inheritance links</span></div>`:''}</div>
+    <div class="stat"><b>${A.models.length}</b><span>data models</span></div><div class="stat"><b>${A.entries.length}</b><span>entry points</span></div>${(A.classes||[]).length?`<div class="stat"><b>${fmt(A.classes.length)}</b><span>classes & types</span></div><div class="stat"><b>${(A.classEdges||[]).filter(e=>e[2]>0).length}</b><span>inheritance links</span></div>${(A.calls||[]).length?`<div class="stat"><b>${fmt(A.calls.length)}</b><span>method calls</span></div>`:''}`:''}</div>
    <div class="two" style="margin-top:6px">
     <div><h3>Languages</h3><div class="box"><div class="bar" style="height:12px">${L.slice(0,10).map((l,i)=>`<i style="width:${l.bytes/tot*100}%;background:hsl(${(i*57+200)%360} 65% 60%)" title="${l.name}"></i>`).join('')}</div>
      <div class="legend">${L.slice(0,10).map((l,i)=>`<span><i style="background:hsl(${(i*57+200)%360} 65% 60%)"></i>${l.name} ${Math.round(l.bytes/tot*100)}% · ${l.files} files</span>`).join('')}</div></div>
@@ -451,7 +509,7 @@ function renderArch(){
   $('#fitBtn').onclick=()=>GRAPH.fit();
   $('#findIn').onchange=e=>{ const v=e.target.value, lv=v.toLowerCase(); const c=A.comps.find(c=>c.label===v); if(c) return selectComp(c.id); const k=(A.classes||[]).find(k=>k.name===v)||(A.classes||[]).find(k=>k.name.toLowerCase()===lv); if(k) return focusClass(k.id); const c2=A.comps.find(c=>c.label.toLowerCase().includes(lv)); if(c2) return selectComp(c2.id); const k2=(A.classes||[]).find(k=>k.name.toLowerCase().includes(lv)); if(k2) focusClass(k2.id); };
   UI.drill=null; drawArch(); if (UI.sel && UI.sel[0]==='c') drawerComp(A.comps[+UI.sel.slice(1)]); else drawerHome();
-  const qp=new URLSearchParams(location.search); if (qp.has('sel') && !renderArch.done) { renderArch.done=true; const c=A.comps.find(c=>c.label.includes(qp.get('sel'))); if(c){ selectComp(c.id); if(qp.has('drill')){ UI.drill=c.id; UI.drillMode=qp.get('drill')==='classes'?'classes':'files'; UI.drillMode==='classes'?drawClasses(c.id):drawDrill(c.id); drawerDrillHead(c);} if(qp.has('class')){ const k=A.classes.find(k=>k.name===qp.get('class')); if(k) focusClass(k.id); } } }
+  const qp=new URLSearchParams(location.search); if (qp.has('sel') && !renderArch.done) { renderArch.done=true; const c=A.comps.find(c=>c.label.includes(qp.get('sel'))); if(c){ selectComp(c.id); if(qp.has('drill')){ UI.drill=c.id; UI.drillMode=qp.get('drill')==='classes'?'classes':'files'; UI.drillMode==='classes'?drawClasses(c.id):drawDrill(c.id); drawerDrillHead(c);} if(qp.get('drill')==='methods'){ UI.drillMode='methods'; drawMethods(c.id); drawerDrillHead(c); } if(qp.has('class')){ const k=A.classes.find(k=>k.name===qp.get('class')); if(k) focusClass(k.id); } } }
 }
 
 /* flows */
@@ -597,6 +655,15 @@ function classMermaid(){
   pick.forEach(([a,b,t])=>{ const A_=A.classes[a],B_=A.classes[b]; const l=`  ${id(B_)} <|${t===2?'..':'--'} ${id(A_)}`; if(!seen.has(l)){seen.add(l);lines.push(l);} });
   return lines.join('\n');
 }
+function callMermaid(){
+  const cs=(A.calls||[]).filter(c=>c[0]!==c[2]); if(!cs.length) return '';
+  const deg=new Map(); cs.forEach(([a,b,c,d])=>{ [a+'.'+b,c+'.'+d].forEach(k=>deg.set(k,(deg.get(k)||0)+1)); });
+  const pick=cs.slice().sort((x,y)=>(deg.get(y[0]+'.'+y[1])+deg.get(y[2]+'.'+y[3]))-(deg.get(x[0]+'.'+x[1])+deg.get(x[2]+'.'+x[3]))).slice(0,70);
+  const nodes=new Map(); const lines=['flowchart LR'];
+  const nd=(c,m)=>{ const id='m'+c+'_'+m; if(!nodes.has(id)){ nodes.set(id,1); lines.push(`  ${id}["${mname(c,m).replace(/"/g,"'")}"]`); } return id; };
+  pick.forEach(([a,b,c,d])=>lines.push(`  ${nd(a,b)} --> ${nd(c,d)}`));
+  return lines.join('\n');
+}
 function markdownReport(){
   const r=A.repo, s=A.stats; const L=[];
   L.push(`# ${r.owner}/${r.name} — architecture`,'',`_Generated by Repo Atlas from ${r.url} @ ${r.branch}_`,'',narrative().replace(/<[^>]+>/g,''),'','## Components','','| Component | Layer | Files | Depends on | Used by |','|---|---|---|---|---|');
@@ -611,14 +678,16 @@ function markdownReport(){
 }
 function download(name, text, type='text/plain'){ const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([text],{type})); a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000); }
 function renderExport(){
-  const m=mermaid(), md=markdownReport(), cm=classMermaid();
+  const m=mermaid(), md=markdownReport(), cm=classMermaid(), km=callMermaid();
   $('#panel').innerHTML = `<div class="wrap"><h3>Mermaid diagram <small>paste into GitHub README, Notion, mermaid.live…</small></h3><textarea class="out" id="mm" readonly>${esc(m)}</textarea>
    <div style="margin:8px 0 22px;display:flex;gap:8px"><button class="btn" id="cpm">Copy</button><button class="btn" id="dlm">Download .mmd</button></div>
    ${cm?`<h3>Class diagram (inheritance &amp; interfaces) <small>top ${Math.min(90,(A.classEdges||[]).filter(e=>e[2]>0).length)} relations</small></h3><textarea class="out" id="cm" readonly>${esc(cm)}</textarea><div style="margin:8px 0 22px"><button class="btn" id="cpc">Copy</button></div>`:''}
+   ${km?`<h3>Method call graph <small>top cross-class calls</small></h3><textarea class="out" id="km" readonly>${esc(km)}</textarea><div style="margin:8px 0 22px"><button class="btn" id="cpk">Copy</button></div>`:''}
    <h3>Markdown architecture report</h3><textarea class="out" id="md" readonly>${esc(md)}</textarea><div style="margin:8px 0 22px;display:flex;gap:8px"><button class="btn" id="cpr">Copy</button><button class="btn" id="dlr">Download .md</button></div>
    <h3>Raw analysis</h3><p class="hint">Everything the analyzer found, as JSON. Re-open it later with “Load JSON” — no GitHub requests needed.</p><button class="btn" id="dlj">Download JSON</button></div>`;
   const cp=(id,btn)=>{ $(id).select(); navigator.clipboard&&navigator.clipboard.writeText($(id).value); btn.textContent='Copied ✓'; setTimeout(()=>btn.textContent='Copy',1200); };
   if ($('#cpc')) $('#cpc').onclick=e=>cp('#cm',e.target);
+  if ($('#cpk')) $('#cpk').onclick=e=>cp('#km',e.target);
   $('#cpm').onclick=e=>cp('#mm',e.target); $('#cpr').onclick=e=>cp('#md',e.target);
   $('#dlm').onclick=()=>download(A.repo.name+'-architecture.mmd',m); $('#dlr').onclick=()=>download(A.repo.name+'-architecture.md',md);
   $('#dlj').onclick=()=>download(A.repo.name+'-atlas.json',JSON.stringify(A),'application/json');
@@ -652,7 +721,7 @@ async function run(){
   setTimeout(()=>setProgress(0),600);
 }
 function open_(res){
-  A=res; TREE=null; UI.sel=null; UI.drill=null; UI.drillMode='files'; A.classes=A.classes||[]; A.classEdges=A.classEdges||[]; UI.tree={}; UI.treeFilter=''; UI.apiFilter=''; UI.envFilter='';
+  A=res; TREE=null; UI.sel=null; UI.drill=null; UI.drillMode='files'; A.classes=A.classes||[]; A.classEdges=A.classEdges||[]; A.calls=A.calls||[]; UI.tree={}; UI.treeFilter=''; UI.apiFilter=''; UI.envFilter='';
   // rehydrate Map-ish fields after JSON
   A.services.forEach(s=>{ if(!Array.isArray(s.links)) s.links=Object.entries(s.links).map(([k,v])=>[+k,v]); });
   derive(); const r=A.repo;

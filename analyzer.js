@@ -345,7 +345,7 @@ function extractClasses(f, text){
     const seg = text.slice(c.pos, i+1<out.length ? out[i+1].pos : text.length);
     c.line = text.slice(0,c.pos).split('\n').length + (text[c.pos]==='\n'?1:0);
     c.idents = new Set(seg.match(/\b[A-Z][A-Za-z0-9_]{2,}\b/g)||[]);
-    const meth = new Set(); let rx = null;
+    let rx = null;
     if (['JavaScript','TypeScript','Vue','Svelte','Astro'].includes(L)) rx = /^[ \t]+(?:(?:public|private|protected|static|async|override|readonly|abstract|get|set)\s+)*([A-Za-z_$][\w$]*)\s*(?:<[^>(]*>)?\s*\([^)]*\)\s*(?::\s*[^{;=]+)?\s*[{;]/gm;
     else if (L==='Python') rx = /^[ \t]+(?:async\s+)?def\s+(\w+)/gm;
     else if (L==='Java'||L==='C#') rx = /^[ \t]+(?:(?:public|private|protected|internal|static|final|abstract|virtual|override|async|synchronized|sealed|extern|unsafe|default)\s+)+[\w<>\[\],.?]+(?:\s+[\w<>\[\],.?]+)*?\s+(\w+)\s*\(/gm;
@@ -354,9 +354,30 @@ function extractClasses(f, text){
     else if (L==='Visual Basic') rx = /^[ \t]*(?!End\b)(?:\w+[ \t]+)*?(?:Sub|Function)[ \t]+(\w+)/gim;
     else if (L==='Ruby') rx = /^\s*def\s+(?:self\.)?(\w+[?!]?)/gm;
     else if (L==='PHP') rx = /function\s+(\w+)/g;
-    if (rx) for (const m of seg.matchAll(rx)) if (!NOT_METHOD.has(m[1]) && meth.size<60) meth.add(m[1]);
-    for (const g of goMeth) if (g.type===c.name && meth.size<60) meth.add(g.name);
-    c.methods = [...meth];
+    const ms = [];
+    if (rx) for (const m of seg.matchAll(rx)) if (!NOT_METHOD.has(m[1]) && !ms.some(x=>x.name===m[1]) && ms.length<60) ms.push({name:m[1], idx:m.index + (m[0].match(/^\s*/)||[''])[0].length});
+    ms.sort((a,b)=>a.idx-b.idx);
+    const nlBefore = i => { let n=0; for (let p=seg.indexOf('\n'); p>=0 && p<i; p=seg.indexOf('\n',p+1)) n++; return n; };
+    c.methods = []; c.mcalls = []; c.mlines = [];
+    ms.forEach((m,i)=>{
+      const body = seg.slice(m.idx, i+1<ms.length ? ms[i+1].idx : seg.length);
+      const calls = new Set(); let first = true;
+      for (const cm of body.matchAll(/(?:\b([A-Za-z_]\w*)\s*\.\s*)?\b([A-Za-z_]\w*)\s*\(/g)) {
+        const recv = cm[1]||'', nm = cm[2];
+        if (first && !recv && nm===m.name) { first=false; continue; } first=false;
+        if (NOT_METHOD.has(nm) || calls.size>=80) continue;
+        if (/\bnew\s+$/i.test(body.slice(Math.max(0,cm.index-6),cm.index))) continue;
+        calls.add(recv+'|'+nm);
+      }
+      c.methods.push(m.name); c.mcalls.push([...calls]); c.mlines.push(c.line + nlBefore(m.idx));
+    });
+    if (L==='Go') for (const g of goMeth) if (g.type===c.name && !c.methods.includes(g.name) && c.methods.length<60) { c.methods.push(g.name); c.mcalls.push([]); c.mlines.push(c.line); }
+    const types = {}; const T = (v,t) => { if (v && t && /^[A-Z]/.test(t) && !/^(String|Number|Boolean|Object|Array|Promise|Optional|List|Map|Set|Dict|Any)$/.test(t)) types[v]=t; };
+    for (const m of seg.matchAll(/\b([A-Za-z_]\w*)\s*\??:\s*\*?([A-Z]\w+)/g)) T(m[1],m[2]);
+    for (const m of seg.matchAll(/\b([A-Z]\w+)(?:<[^<>]*>)?(?:\[\])?\s+([a-z_]\w*)\s*(?=[=;,)\n])/g)) T(m[2],m[1]);
+    for (const m of seg.matchAll(/\b([A-Za-z_]\w*)\s*=\s*(?:new\s+|New\s+)?([A-Z]\w+)\s*[(<]/g)) T(m[1],m[2]);
+    if (L==='Visual Basic') for (const m of seg.matchAll(/\b([A-Za-z_]\w*)\s+As\s+(?:New\s+)?([A-Z]\w+)/gi)) T(m[1],m[2]);
+    c.types = types;
   });
   return out;
 }
@@ -693,7 +714,7 @@ async function analyzeRepo(input, opts = {}, onProgress = ()=>{}){
   /* ---------- class graph ---------- */
   onProgress({phase:'Linking classes and types…', pct:90});
   const classes = []; const byName = new Map(); const CLASS_CAP = 9000;
-  for (const [id, r] of raw) { if (!r.classes) continue; for (const c of r.classes) { if (classes.length>=CLASS_CAP) break; const k={id:classes.length,name:c.name,kind:c.kind,file:id,comp:files[id].comp,line:c.line,methods:c.methods||[],ext:c.ext,impl:c.impl,idents:c.idents}; classes.push(k); if(!byName.has(k.name)) byName.set(k.name,[]); byName.get(k.name).push(k); } }
+  for (const [id, r] of raw) { if (!r.classes) continue; for (const c of r.classes) { if (classes.length>=CLASS_CAP) break; const k={id:classes.length,name:c.name,kind:c.kind,file:id,comp:files[id].comp,line:c.line,methods:c.methods||[],mcalls:c.mcalls||[],mlines:c.mlines||[],types:c.types||{},ext:c.ext,impl:c.impl,idents:c.idents}; classes.push(k); if(!byName.has(k.name)) byName.set(k.name,[]); byName.get(k.name).push(k); } }
   const COMMON = new Set('Program Main Test Tests Config Settings Utils Util Helper Helpers Error Exception Result Response Request Model Base App Context Form Form1 Item Items Data Type Types String Object List Map Set Date Promise Array Number Boolean Function Record Partial Optional Callable Dict Any None True False Self Client Server Service Manager Handler Event Events Options Props State Node Element Component View Controller Logger Console JSON Math Error'.split(' '));
   const fileDirOf = k => dirOf(files[k.file].path);
   function pickTarget(name, from){
@@ -714,6 +735,42 @@ async function analyzeRepo(input, opts = {}, onProgress = ()=>{}){
   let usesCount = 0;
   for (const c of classes) { let n=0;
     for (const id of c.idents) { if (id===c.name || COMMON.has(id)) continue; const arr = byName.get(id); if (!arr || arr.length>5) continue; const t = pickTarget(id,c); if (!t) continue; const k=ceKey(c.id,t.id); if (seenCE.has(k)) continue; seenCE.add(k); classEdges.push([c.id,t.id,0]); if (++n>=40||++usesCount>40000) break; } }
+
+  /* ---------- method call graph ---------- */
+  onProgress({phase:'Tracing method calls…', pct:93});
+  const methIdx = new Map(); // name -> [{k, i}]
+  const ownIdx = classes.map(()=>new Map());
+  classes.forEach(k=>k.methods.forEach((n,i)=>{ ownIdx[k.id].set(n,i); if(!methIdx.has(n)) methIdx.set(n,[]); methIdx.get(n).push({k,i}); }));
+  const parentsOf = classes.map(()=>[]); const refsOf = classes.map(()=>new Set());
+  for (const [a,b,t] of classEdges) { if (t>0) parentsOf[a].push(b); refsOf[a].add(b); }
+  const famOf = l => ['JavaScript','TypeScript','Vue','Svelte','Astro'].includes(l)?'js':['C#','Visual Basic','F#'].includes(l)?'net':['Java','Kotlin','Scala'].includes(l)?'jvm':l;
+  const findMethod = (T,name,depth=0) => { if (ownIdx[T.id].has(name)) return [T,ownIdx[T.id].get(name)]; if (depth>4) return null; for (const p of parentsOf[T.id]) { const r=findMethod(classes[p],name,depth+1); if (r) return r; } return null; };
+  const COMMON_M = new Set('get set add remove run start stop close open init toString equals hashCode length size map filter push pop save load find update delete create reset clear next then catch call apply bind emit on off log error warn info debug send read write put post render parse format dispose Dispose Equals GetHashCode ToString'.split(' '));
+  const SELF = new Set(['this','self','me','mybase','myclass','cls']), SUPER = new Set(['super','base','mybase']);
+  const calls = []; const seenCall = new Set();
+  outer: for (const k of classes) {
+    const fam = famOf(files[k.file].lang);
+    for (let mi=0; mi<k.methods.length; mi++) for (const sig of k.mcalls[mi]||[]) {
+      const [recv,name] = sig.split('|'); const rl = recv.toLowerCase(); let hit = null;
+      if (!recv || SELF.has(rl)) { hit = SUPER.has(rl) ? parentsOf[k.id].map(p=>findMethod(classes[p],name)).find(Boolean) : findMethod(k,name); }
+      else if (SUPER.has(rl)) hit = parentsOf[k.id].map(p=>findMethod(classes[p],name)).find(Boolean);
+      else {
+        let tn = k.types[recv]; if (!tn && /^[A-Z]/.test(recv)) tn = recv;
+        if (tn) { const T = pickTarget(tn,k) || (tn===k.name?k:null); if (T) hit = findMethod(T,name); }
+        if (!hit && !(recv in k.types)) {
+          const cands = (methIdx.get(name)||[]).filter(x=>x.k.id!==k.id && famOf(files[x.k.file].lang)===fam);
+          const near = cands.filter(x=>refsOf[k.id].has(x.k.id));
+          if (near.length===1) hit=[near[0].k,near[0].i];
+          else if (!near.length && cands.length===1 && name.length>=5 && !COMMON_M.has(name)) hit=[cands[0].k,cands[0].i];
+        }
+      }
+      if (!hit || (hit[0].id===k.id && hit[1]===mi)) continue;
+      const key = k.id+'.'+mi+'>'+hit[0].id+'.'+hit[1]; if (seenCall.has(key)) continue; seenCall.add(key);
+      calls.push([k.id,mi,hit[0].id,hit[1]]); if (calls.length>=40000) break outer;
+    }
+  }
+  const callCountByComp = new Map(); for (const c of calls) { const cc=classes[c[0]].comp; if (cc>=0) callCountByComp.set(cc,(callCountByComp.get(cc)||0)+1); }
+  for (const [cid,n] of callCountByComp) comps[cid].callCount = n;
   classes.forEach(c=>{ delete c.idents; });
   for (const k of classes) if (k.comp>=0) comps[k.comp].classCount=(comps[k.comp].classCount||0)+1;
 
@@ -823,7 +880,7 @@ async function analyzeRepo(input, opts = {}, onProgress = ()=>{}){
     repo:{owner,name:repo,branch,url:meta.html_url,description:meta.description,stars:meta.stargazers_count,language:meta.language,license:meta.license&&meta.license.spdx_id,topics:meta.topics||[],pushed:meta.pushed_at,size:meta.size,forks:meta.forks_count,homepage:meta.homepage},
     stats:{...stats, sourceFiles:srcFiles.length, scanned:raw.size, scanTargets:toScan.length, budget, languages, testFiles:stats.byKind.test||0},
     files:files.map(f=>({id:f.id,path:f.path,size:f.size,ext:f.ext,kind:f.kind,lang:f.lang,comp:f.comp,scanned:f.scanned,loc:f.loc||0,imports:[...f.imports],importedBy:[...f.importedBy],externals:[...f.externals],routes:f.routes,models:f.models})),
-    classes:classes.map(c=>({id:c.id,name:c.name,kind:c.kind,file:c.file,comp:c.comp,line:c.line,methods:c.methods,ext:c.ext,impl:c.impl})), classEdges, comps, edges:edgeList, fileEdges, services:services.map(s=>({...s,links:[...s.links.entries()]})),
+    classes:classes.map(c=>({id:c.id,name:c.name,kind:c.kind,file:c.file,comp:c.comp,line:c.line,methods:c.methods,mlines:c.mlines,ext:c.ext,impl:c.impl})), classEdges, calls, comps, edges:edgeList, fileEdges, services:services.map(s=>({...s,links:[...s.links.entries()]})),
     entries:entriesU, routes:uniqRoutes, models, env:envList,
     compose:{files:composeInfo, services:composeServices}, docker:dockerInfo, workflows, scripts, makeTargets, procfile, deployTargets,
     infraFiles:infraFiles.map(f=>f.path).slice(0,60),
