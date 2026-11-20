@@ -391,11 +391,16 @@ function parseRepoInput(s){
 
 async function analyzeRepo(input, opts = {}, onProgress = ()=>{}){
   const {owner, repo, ref} = parseRepoInput(input);
-  const token = opts.token || null, budget = opts.budget || 500;
+  const token = (opts.token||'').replace(/^(Bearer|token)\s+/i,'').replace(/[\s"']/g,'') || null, budget = opts.budget || 500;
   const hdr = {Accept:'application/vnd.github+json'}; if (token) hdr.Authorization = 'Bearer '+token;
   async function ghJson(path){
     const r = await fetch('https://api.github.com'+path,{headers:hdr});
-    if (r.status===404) throw new Error(token?'Repository or branch not found.':'Repository or branch not found (private repos need a token).');
+    if (r.status===401) throw new Error('GitHub rejected the token (401: invalid, expired or mistyped). Create a new one and paste it again with ⚙ Token.');
+    if (r.status===404) {
+      if (!token) throw new Error('Repository or branch not found. If it is private, add a GitHub token with the ⚙ Token button.');
+      let who=''; try { const u=await fetch('https://api.github.com/user',{headers:hdr}); who = u.ok ? ' Your token authenticates as “'+(await u.json()).login+'”.' : ' GitHub does not accept this token at all (check it was copied in full).'; } catch(e){}
+      throw new Error('Not found with your token.'+who+' Either the repo name/branch is wrong, or the token cannot see it: fine-grained tokens need the right Resource owner and “Only select repositories” must include this repo, with Contents: Read-only. Classic tokens need the “repo” scope (and SSO authorization for org repos).');
+    }
     if (r.status===403 || r.status===429) { const reset=r.headers.get('x-ratelimit-reset'); throw new Error('GitHub API rate limit hit'+(reset?' — resets at '+new Date(reset*1000).toLocaleTimeString():'')+'. Add a personal access token (⚙) to continue.'); }
     if (!r.ok) throw new Error('GitHub API error '+r.status);
     return r.json();

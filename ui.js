@@ -590,7 +590,7 @@ $('#goform').onsubmit=e=>{ e.preventDefault(); run(); };
 $('#themeBtn').onclick=()=>{ const r=document.documentElement; const cur=r.dataset.theme|| (matchMedia('(prefers-color-scheme:light)').matches?'light':'dark'); r.dataset.theme=cur==='light'?'dark':'light'; lsSet('atlas.theme',r.dataset.theme); if(A&&UI.tab==='arch') drawArch(); };
 { const th=lsGet('atlas.theme'); if(th) document.documentElement.dataset.theme=th; }
 $('#tokenBtn').onclick=()=>{ $('#tokenInput').value=lsGet('atlas.token')||''; $('#tokenDlg').showModal(); };
-$('#tokenDlg').addEventListener('close',()=>{ const v=$('#tokenDlg').returnValue; if(v==='save') lsSet('atlas.token',$('#tokenInput').value.trim()||null); if(v==='clear') lsSet('atlas.token',null); $('#tokenBtn').textContent=lsGet('atlas.token')?'⚙ Token ✓':'⚙ Token'; });
+$('#tokenDlg').addEventListener('close',()=>{ const v=$('#tokenDlg').returnValue; if(v==='save') lsSet('atlas.token',$('#tokenInput').value.replace(/[\s"']/g,'')||null); if(v==='clear') lsSet('atlas.token',null); $('#tokenBtn').textContent=lsGet('atlas.token')?'⚙ Token ✓':'⚙ Token'; });
 $('#tokenBtn').textContent=lsGet('atlas.token')?'⚙ Token ✓':'⚙ Token';
 $('#loadJson').onclick=()=>$('#fileIn').click();
 $('#fileIn').onchange=async e=>{ const f=e.target.files[0]; if(!f)return; try { open_(JSON.parse(await f.text())); } catch(err){ alert('Could not read that file: '+err.message); } };
