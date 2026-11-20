@@ -360,6 +360,7 @@ function normUrl(raw){
   if (m) { host = m[1]; s = m[2] || '/'; }
   s = s.replace(/^\$\{[^}]*\}(?=\/|$)/, '').replace(/^\{[^}]*\}(?=\/)/, '');
   s = s.replace(/\$\{[^}]*\}/g, ':p').replace(/\{[^}]*\}/g, ':p').split(/[?#]/)[0];
+  if (s[0] !== '/' && /^(?:api|rest|v\d+)\b/.test(s)) s = '/' + s;
   if (s[0] !== '/') return null;
   s = s.replace(/\/{2,}/g, '/'); if (s.length > 1) s = s.replace(/\/$/, '');
   if (s.length > 160 || /\s/.test(s)) return null;
@@ -378,10 +379,20 @@ function extractHttpCalls(f, text){
   const winMethod = (i, back) => { const w = text.slice(Math.max(0, i - (back || 0)), i + 260); const m = w.match(/\b(?:method|type)\s*:\s*['"`](\w+)['"`]/i); return m ? m[1] : null; };
   if (['JavaScript','TypeScript','Vue','Svelte','Astro'].includes(lang)) {
     let t = text;
-    const consts = new Map();
-    for (const m of t.matchAll(/\b(?:const|let|var|final|static)\s+([A-Za-z_$][\w$]*)\s*(?::\s*string\s*)?=\s*(?:`([^`\n]*)`|'([^'\n]*)'|"([^"\n]*)")/g)) { const v = m[2] ?? m[3] ?? m[4]; if (/^(?:https?:)?\/\/|^\/|^\$\{/.test(v) && !consts.has(m[1])) consts.set(m[1], v); }
-    if (consts.size) {
-      for (const [n, v] of consts) { const re = new RegExp(String.raw`(\(\s*)` + n.replace(/\$/g, '\\$') + String.raw`(?=\s*[,)+])`, 'g'); t = t.replace(re, (_, a) => a + JSON.stringify(v)); t = t.split('${' + n + '}').join(v.replace(/\$\{/g, '$\u0000{')); }
+    const defs = [], cur = new Map();
+    for (const m of t.matchAll(/\b(?:const|let|var|final|static)\s+([A-Za-z_$][\w$]*)\s*(?::\s*string\s*)?=\s*(?:`([^`\n]*)`|'([^'\n]*)'|"([^"\n]*)")/g)) {
+      let v = m[2] ?? m[3] ?? m[4];
+      for (const [n, pv] of cur) v = v.split('${' + n + '}').join(pv);
+      if ((/^(?:https?:)?\/\/|^\/|^\$\{/.test(v) || /^(?:api|rest|v\d+)\//.test(v) || (/url|api|endpoint|path|route|base/i.test(m[1]) && /^[\w-]+\/[\w\-\/${}.]*/.test(v))) && !/\s/.test(v.split('?')[0])) { defs.push({n: m[1], v, idx: m.index, end: m.index + m[0].length}); cur.set(m[1], v); }
+    }
+    if (defs.length) {
+      const nextIdx = d => { const nx = defs.find(x => x.n === d.n && x.idx > d.idx); return nx ? nx.idx : t.length; };
+      for (const d of defs.slice().sort((a, b) => b.idx - a.idx)) {
+        const e = nextIdx(d); let seg = t.slice(d.end, e);
+        const re = new RegExp(String.raw`(\(\s*)` + d.n.replace(/\$/g, '\\$') + String.raw`(?=\s*[,)+])`, 'g');
+        seg = seg.replace(re, (_, a) => a + JSON.stringify(d.v)).split('${' + d.n + '}').join(d.v.replace(/\$\{/g, '$\u0000{'));
+        t = t.slice(0, d.end) + seg + t.slice(e);
+      }
       t = t.replace(/\u0000/g, '');
       for (let k = 0; k < 3; k++) t = t.replace(/(["'`])([^"'`\n]*)\1\s*\+\s*(["'`])([^"'`\n]*)\3/g, (_, q1, a, q3, c) => '"' + a + c + '"');
     }
@@ -425,7 +436,7 @@ function extractFile(f, text){
     for (const m of t.matchAll(/\bimport\.meta\.env\.([A-Z][A-Z0-9_]{2,})/g)) r.env.push(m[1]);
     for (const m of t.matchAll(/\b(?:app|router|server|api|route|fastify|r|routes|v1|v2)\.(get|post|put|patch|delete|all|head|options)\s*\(\s*(['"`])([^'"`\n]+)\2/g)) if (/^[\/*]/.test(m[3])) r.routes.push({method:m[1].toUpperCase(),path:m[3]});
     { const cp=(t.match(/@Controller\(\s*['"`]([^'"`]*)['"`]/)||[])[1]||''; for (const m of t.matchAll(/@(Get|Post|Put|Patch|Delete)\(\s*['"`]?([^'"`)\n]*)['"`]?\s*\)/g)) r.routes.push({method:m[1].toUpperCase(),path:('/'+cp.replace(/^\/|\/$/g,'')+'/'+m[2].replace(/^\//,'')).replace(/\/+/g,'/').replace(/(.)\/$/,'$1'),nest:true}); }
-    for (const m of t.matchAll(/\b(?:app|router|server|api|\w*[rR]outer|\w*Routes)\.route\(\s*(['"`])(\/[^'"`]*)\1\s*\)/g)) { const seg = t.slice(m.index + m[0].length, m.index + m[0].length + 500).split(/;|\n\s*\n/)[0]; for (const c of seg.matchAll(/^\s*\.\s*(get|post|put|patch|delete|all)\s*\(|\)\s*\.\s*(get|post|put|patch|delete|all)\s*\(/g)) r.routes.push({method:(c[1]||c[2]).toUpperCase(),path:m[2]}); }
+    for (const m of t.matchAll(/\b(?:app|router|server|api|\w*[rR]outer|\w*Routes)\s*\.\s*route\(\s*(['"`])(\/[^'"`]*)\1\s*\)/g)) { const seg = t.slice(m.index + m[0].length, m.index + m[0].length + 500).split(/;|\n\s*\n/)[0]; for (const c of seg.matchAll(/^\s*\.\s*(get|post|put|patch|delete|all)\s*\(|\)\s*\.\s*(get|post|put|patch|delete|all)\s*\(/g)) r.routes.push({method:(c[1]||c[2]).toUpperCase(),path:m[2]}); }
     r.mounts = []; for (const m of t.matchAll(/\b(?:app|router|server|api|\w*[rR]outer|\w*Routes)\.use\(\s*(['"`])(\/[^'"`]*)\1\s*,\s*(?:[\w$.()]+\s*,\s*)*?(?:require\(\s*['"]([^'"]+)['"]\s*\)|([\w$]+))\s*\)/g)) { let spec = m[3]; if (!spec && m[4]) { const im = t.match(new RegExp(String.raw`(?:import\s+(?:\*\s+as\s+)?` + m[4].replace(/\$/g,'\\$') + String.raw`\b[^'"]*from\s*|\b` + m[4].replace(/\$/g,'\\$') + String.raw`\s*=\s*require\(\s*)['"]([^'"]+)['"]`)); spec = im && im[1]; } if (spec) r.mounts.push({prefix: m[2], spec}); }
     for (const m of t.matchAll(/@Entity\([^)]*\)\s*(?:export\s+)?class\s+(\w+)/g)) r.models.push({name:m[1],kind:'TypeORM entity'});
     for (const m of t.matchAll(/mongoose\.model(?:<[^>]*>)?\(\s*['"](\w+)/g)) r.models.push({name:m[1],kind:'Mongoose model'});
@@ -1228,9 +1239,9 @@ async function analyzeRepo(input, opts = {}, onProgress = ()=>{}){
             const rs = x.seg; if (!rs.length || !mOk(c.method, x.meth)) continue;
             const shortC = cs.length < rs.length, n = Math.min(cs.length, rs.length), ro = rs.length - n, co = cs.length - n;
             let lit = 0, ok = true;
-            for (let i=0;i<n;i++) { const a=rs[ro+i], b=cs[co+i]; const pa=isPar(a), pb=isPar(b); if (pa||pb) continue; if (a.toLowerCase()!==b.toLowerCase()) { ok=false; break; } lit++; }
+            let cpen = 0; for (let i=0;i<n;i++) { const a=rs[ro+i], b=cs[co+i]; const pa=isPar(a), pb=isPar(b); if (pa||pb) { if (pb&&!pa) cpen++; continue; } if (a.toLowerCase()!==b.toLowerCase()) { ok=false; break; } lit++; }
             if (!ok || lit<1) continue;
-            const sc = lit*10 - (co+ro)*1.5 + (x.meth===c.method?3:0) + (co+ro===0?2:0) - (shortC?4:0);
+            const sc = lit*10 - (co+ro)*1.5 + (x.meth===c.method?3:0) + (co+ro===0?2:0) - (shortC?4:0) - cpen*6;
             if (!best || sc>best.sc) best={x,sc};
           }
         }
